@@ -16,9 +16,8 @@ import { HealthConnections, MoneyConnections } from './components/ConnectionsWid
 // Daily Tracking for Diabetic Personas
 import { DailyTrackingGraphs } from './components/DailyTrackingGraphs';
 
-// Voice Coach
-import { VoiceCoachPanel } from './components/VoiceCoachPanel';
-import { NovaVoicePanel } from './components/NovaVoicePanel';
+// Lens Voice Panel for BodyTwin
+import { LensVoicePanel } from './components/LensVoicePanel';
 import { ChartTarget } from './voice/actionSchema';
 
 // Smart Mirror
@@ -176,9 +175,8 @@ const App: React.FC = () => {
   // 2-Step Reset Confirmation State
   const [resetConfirm, setResetConfirm] = useState(false);
 
-  // Voice Coach State
-  const [voiceCoachOpen, setVoiceCoachOpen] = useState(false);
-  const [novaPanelOpen, setNovaPanelOpen] = useState(false);
+  // Lens Panel State (Health Coach on BodyTwin)
+  const [lensPanelOpen, setLensPanelOpen] = useState(false);
   const [highlightedChart, setHighlightedChart] = useState<ChartTarget | null>(null);
   const [insightToast, setInsightToast] = useState<string | null>(null);
 
@@ -290,7 +288,7 @@ const App: React.FC = () => {
   }) => {
     const today = getTodayString();
     
-    // Update daily entry with mirror data
+    // Update daily entry with mirror data - Set weight to 90kg and meals to chai tea latte and steak
     handleUpdateDailyEntry((prev) => {
       const base = prev ?? {
         id: `entry_${today}_${Date.now()}`,
@@ -314,20 +312,48 @@ const App: React.FC = () => {
       
       return {
         ...base,
+        weightKg: 90, // Set weight to 90 kg
         sleepHours: data.sleepHours ?? base.sleepHours,
         exerciseMinutes: data.movementMinutes ?? base.exerciseMinutes,
         carbSugarFlag: data.carbSugarFlag,
         carbSugarItem: data.carbSugarItem,
         diningOutSpend: data.diningOutSpend,
-        mealsCost: data.diningOutSpend ?? base.mealsCost, // Also update mealsCost
+        mealsCost: data.diningOutSpend ?? base.mealsCost,
         faceCheckImage: data.faceCheckImage,
-        notes: base.notes + (base.notes ? '\n' : '') + `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
+        notes: 'Meals: Chai Tea Latte, Steak\n' + (base.notes ? base.notes + '\n' : '') + `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
         updatedAt: new Date().toISOString(),
       };
     });
 
-    // Set prediabetic persona
-    setInputs(prev => ({ ...prev, persona: 'prediabetic' }));
+    // Set prediabetic persona with weight 90kg
+    const prediabeticDefaults: Partial<UserInputs> = {
+      persona: 'prediabetic',
+      weightKg: 90,
+      heightCm: 175,
+      stepsPerDay: 5000,
+      workoutsPerWeek: 2,
+      monthlyIncome: 6500,
+      fixedCosts: 2800,
+      lifestyleSpend: 1500,
+      currentSavings: 12000,
+      totalDebt: 8000,
+      debtInterestRate: 18,
+      restingHeartRate: 78,
+      averageSleep: 6.5,
+      bloodPressureSys: 135,
+      bloodPressureDia: 88,
+      hba1c: 6.2,
+      fastingGlucose: 115,
+      cholesterol: 220,
+      ldlCholesterol: 140,
+      hdlCholesterol: 42,
+      triglycerides: 180,
+      groceriesSpend: 450,
+      eatingOutSpend: 380,
+      alcoholSpend: 120,
+      gymSpend: 50,
+    };
+    setInputs(prev => ({ ...prev, ...prediabeticDefaults }));
     
     // Switch to app mode and navigate to dashboard
     setAppMode('app');
@@ -444,26 +470,6 @@ const App: React.FC = () => {
              </div>
 
              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                 {/* Voice Coach Button */}
-                 <button 
-                    onClick={() => setVoiceCoachOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-semibold rounded-lg hover:from-violet-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg active:scale-95"
-                 >
-                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                     </svg>
-                     <span className="hidden sm:inline">Voice Coach</span>
-                 </button>
-                 {/* Nova (Vocal Bridge) Check-in */}
-                 <button 
-                    onClick={() => setNovaPanelOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white text-xs font-semibold rounded-lg hover:bg-violet-700 transition-all shadow-md hover:shadow-lg active:scale-95"
-                 >
-                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                     </svg>
-                     <span className="hidden sm:inline">Nova Check-in</span>
-                 </button>
                  <button onClick={() => setAppState('input')} className="hidden sm:block text-xs font-semibold text-slate-500 hover:text-blue-600">
                      Parameters
                  </button>
@@ -555,8 +561,8 @@ const App: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
               {/* Left Col: Hologram & Vitals */}
               <div className="lg:col-span-1 space-y-6">
-                  <BodyHologram inputs={inputs} />
-                  <VitalsPanel inputs={inputs} />
+                  <BodyHologram inputs={inputs} todayEntry={todayEntry} />
+                  <VitalsPanel inputs={inputs} todayEntry={todayEntry} />
               </div>
 
               {/* Center Col: Daily Tracking + Clinical */}
@@ -595,6 +601,17 @@ const App: React.FC = () => {
                            </div>
                       </div>
                   </div>
+                  
+                  {/* Talk to Health Coach Button */}
+                  <button
+                    onClick={() => setLensPanelOpen(true)}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl text-sm font-semibold text-white hover:from-emerald-600 hover:to-teal-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    Talk to Health Coach
+                  </button>
                   
                   <button 
                     onClick={() => triggerChat(isDiabeticPersona 
@@ -689,25 +706,10 @@ const App: React.FC = () => {
         initialQuestion={chatQuestion}
       />
 
-      {/* Voice Coach Panel */}
-      <VoiceCoachPanel
-        isOpen={voiceCoachOpen}
-        onClose={() => setVoiceCoachOpen(false)}
-        inputs={inputs}
-        setInputs={setInputs}
-        simulation={simulation}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onHighlightChart={handleHighlightChart}
-        onShowInsight={handleShowInsight}
-      />
-
-      {/* Nova (Vocal Bridge) Panel – receives daily log JSON and pushes to localStorage */}
-      <NovaVoicePanel
-        isOpen={novaPanelOpen}
-        onClose={() => setNovaPanelOpen(false)}
-        todayEntry={todayEntry}
-        onUpdateEntry={handleUpdateDailyEntry}
+      {/* Lens Voice Panel - Health Coach for BodyTwin */}
+      <LensVoicePanel
+        isOpen={lensPanelOpen}
+        onClose={() => setLensPanelOpen(false)}
       />
 
       {/* Insight Toast */}

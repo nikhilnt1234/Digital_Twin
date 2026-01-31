@@ -1,17 +1,24 @@
 import React from 'react';
-import { UserInputs } from '../types';
+import { UserInputs, DailyEntry } from '../types';
 
-export const VitalsPanel: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
-  const bmi = inputs.heightCm ? (inputs.weightKg / Math.pow(inputs.heightCm/100, 2)).toFixed(1) : '--';
+export const VitalsPanel: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntry | null }> = ({ inputs, todayEntry }) => {
+  // Use todayEntry values if available
+  const weight = todayEntry?.weightKg ?? inputs.weightKg;
+  const sleepHours = todayEntry?.sleepHours ?? inputs.averageSleep;
+  const exerciseMinutes = todayEntry?.exerciseMinutes ?? 0;
+  const steps = todayEntry?.stepsCount ?? inputs.stepsPerDay;
   
-  const VitalRow = ({ label, value, unit, avg }: { label: string, value: string | number, unit: string, avg?: string }) => (
-    <div className="flex justify-between items-center py-3 border-b border-slate-50 last:border-0">
+  const bmi = inputs.heightCm && weight ? (weight / Math.pow(inputs.heightCm/100, 2)).toFixed(1) : '--';
+  
+  const VitalRow = ({ label, value, unit, avg, highlight }: { label: string, value: string | number, unit: string, avg?: string, highlight?: boolean }) => (
+    <div className={`flex justify-between items-center py-3 border-b border-slate-50 last:border-0 ${highlight ? 'bg-emerald-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
       <div className="flex flex-col">
         <span className="text-xs font-semibold text-slate-500">{label}</span>
         {avg && <span className="text-[10px] text-slate-400">30d avg: {avg}</span>}
+        {highlight && <span className="text-[10px] text-emerald-600 font-medium">From Mirror</span>}
       </div>
       <div className="text-right">
-        <div className="text-base font-mono font-bold text-slate-800">{value} <span className="text-xs font-sans font-normal text-slate-400">{unit}</span></div>
+        <div className={`text-base font-mono font-bold ${highlight ? 'text-emerald-700' : 'text-slate-800'}`}>{value} <span className="text-xs font-sans font-normal text-slate-400">{unit}</span></div>
       </div>
     </div>
   );
@@ -23,12 +30,13 @@ export const VitalsPanel: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
         Today's Vitals
       </h3>
       <div className="flex flex-col">
-        <VitalRow label="Weight" value={inputs.weightKg} unit="kg" avg={(inputs.weightKg + 0.5).toFixed(1)} />
+        <VitalRow label="Weight" value={weight || '--'} unit="kg" avg={(inputs.weightKg + 0.5).toFixed(1)} highlight={!!todayEntry?.weightKg} />
         <VitalRow label="BMI" value={bmi} unit="" />
         <VitalRow label="Resting HR" value={inputs.restingHeartRate || '--'} unit="bpm" avg={inputs.restingHeartRate ? String(inputs.restingHeartRate + 2) : undefined} />
         <VitalRow label="Blood Pressure" value={inputs.bloodPressureSys ? `${inputs.bloodPressureSys}/${inputs.bloodPressureDia}` : '--/--'} unit="mmHg" />
-        <VitalRow label="Sleep" value={inputs.averageSleep || '--'} unit="hrs" avg="6.8" />
-        <VitalRow label="Activity" value={inputs.stepsPerDay.toLocaleString()} unit="steps" avg={(inputs.stepsPerDay - 500).toLocaleString()} />
+        <VitalRow label="Sleep" value={sleepHours || '--'} unit="hrs" avg="6.8" highlight={!!todayEntry?.sleepHours} />
+        <VitalRow label="Exercise" value={exerciseMinutes || '--'} unit="min" highlight={!!todayEntry?.exerciseMinutes} />
+        <VitalRow label="Activity" value={steps ? steps.toLocaleString() : '--'} unit="steps" avg={(inputs.stepsPerDay - 500).toLocaleString()} />
       </div>
     </div>
   );
