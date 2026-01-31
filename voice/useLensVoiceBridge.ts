@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Room, RoomEvent, Track, RoomOptions, DataPacket_Kind } from 'livekit-client';
+import { Room, RoomEvent, Track, TranscriptionSegment, Participant } from 'livekit-client';
 
 export interface LensMessage {
   id: string;
@@ -45,6 +45,31 @@ export function useLensVoiceBridge(options: UseLensVoiceBridgeOptions = {}) {
 
   // Setup room event handlers
   useEffect(() => {
+    // Handle transcription events from LiveKit (primary way Vocal Bridge sends transcripts)
+    const handleTranscriptionReceived = (
+      segments: TranscriptionSegment[],
+      participant?: Participant
+    ) => {
+      console.log('[LensVoiceBridge] Transcription received:', segments, 'from:', participant?.identity);
+      
+      for (const segment of segments) {
+        if (segment.final && segment.text && segment.text.trim()) {
+          const isAgent = participant?.identity?.toLowerCase().includes('agent') || 
+                          participant?.identity?.toLowerCase().includes('assistant') ||
+                          !participant?.identity?.includes('user');
+          
+          if (onMessageReceivedRef.current) {
+            onMessageReceivedRef.current({
+              id: `lens-${++messageIdRef.current}`,
+              speaker: isAgent ? 'lens' : 'user',
+              text: segment.text.trim(),
+              timestamp: Date.now(),
+            });
+          }
+        }
+      }
+    };
+
     const handleDataReceived = (payload: Uint8Array, participant?: import('livekit-client').RemoteParticipant) => {
       try {
         const text = new TextDecoder().decode(payload);
@@ -53,19 +78,13 @@ export function useLensVoiceBridge(options: UseLensVoiceBridgeOptions = {}) {
         console.log('[LensVoiceBridge] Data received:', data);
 
         // Handle various transcription formats from Vocal Bridge
-        // Format 1: { type: 'transcription', text: '...', participant: 'agent'|'user' }
-        // Format 2: { type: 'transcript', transcript: '...', is_final: true, source: 'agent'|'user' }
-        // Format 3: { text: '...', speaker: 'agent'|'user' }
-        // Format 4: { type: 'agent_message', content: '...' }
-        // Format 5: { type: 'user_transcript', text: '...' }
-        
         let messageText: string | null = null;
         let speaker: 'lens' | 'user' = 'lens';
         
         if (data.type === 'transcription' && data.text) {
           messageText = data.text;
           speaker = data.participant === 'user' || data.source === 'user' ? 'user' : 'lens';
-        } else if (data.type === 'transcript' && data.transcript && data.is_final) {
+        } else if (data.type === 'transcript' && data.transcript && data.is_final !== false) {
           messageText = data.transcript;
           speaker = data.source === 'user' ? 'user' : 'lens';
         } else if (data.type === 'agent_message' && data.content) {
@@ -74,24 +93,35 @@ export function useLensVoiceBridge(options: UseLensVoiceBridgeOptions = {}) {
         } else if (data.type === 'user_transcript' && data.text) {
           messageText = data.text;
           speaker = 'user';
-        } else if (data.text && typeof data.text === 'string') {
+        } else if (data.type === 'agent_transcript' && data.text) {
           messageText = data.text;
-          speaker = data.speaker === 'user' || data.participant === 'user' ? 'user' : 'lens';
+          speaker = 'lens';
+        } else if (data.text && typeof data.text === 'string' && data.text.trim()) {
+          messageText = data.text;
+          speaker = data.speaker === 'user' || data.participant === 'user' || data.role === 'user' ? 'user' : 'lens';
         } else if (data.message && typeof data.message === 'string') {
           messageText = data.message;
           speaker = data.role === 'user' ? 'user' : 'lens';
-        }
-        
-        // Also check if it's from the agent participant
-        if (participant && participant.identity && participant.identity.toLowerCase().includes('agent')) {
+        } else if (data.content && typeof data.content === 'string') {
+          messageText = data.content;
           speaker = 'lens';
         }
+        
+        // Check participant identity
+        if (participant && participant.identity) {
+          const identity = participant.identity.toLowerCase();
+          if (identity.includes('agent') || identity.includes('assistant')) {
+            speaker = 'lens';
+          } else if (identity.includes('user')) {
+            speaker = 'user';
+          }
+        }
 
-        if (messageText && onMessageReceivedRef.current) {
+        if (messageText && messageText.trim() && onMessageReceivedRef.current) {
           onMessageReceivedRef.current({
             id: `lens-${++messageIdRef.current}`,
             speaker,
-            text: messageText,
+            text: messageText.trim(),
             timestamp: Date.now(),
           });
         }
@@ -99,11 +129,11 @@ export function useLensVoiceBridge(options: UseLensVoiceBridgeOptions = {}) {
         // Might not be JSON, could be raw text
         try {
           const text = new TextDecoder().decode(payload);
-          if (text && text.length > 0 && onMessageReceivedRef.current) {
+          if (text && text.trim().length > 0 && onMessageReceivedRef.current) {
             onMessageReceivedRef.current({
               id: `lens-${++messageIdRef.current}`,
               speaker: 'lens',
-              text: text,
+              text: text.trim(),
               timestamp: Date.now(),
             });
           }
@@ -126,6 +156,8 @@ export function useLensVoiceBridge(options: UseLensVoiceBridgeOptions = {}) {
       }
     };
 
+    // Listen for all relevant events
+    room.on(RoomEvent.TranscriptionReceived, handleTranscriptionReceived);
     room.on(RoomEvent.DataReceived, handleDataReceived);
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
     room.on(RoomEvent.Connected, () => {
@@ -152,6 +184,7 @@ export function useLensVoiceBridge(options: UseLensVoiceBridgeOptions = {}) {
     });
 
     return () => {
+      room.off(RoomEvent.TranscriptionReceived, handleTranscriptionReceived);
       room.off(RoomEvent.DataReceived, handleDataReceived);
       room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       audioElementsRef.current.forEach((el) => el.remove());
