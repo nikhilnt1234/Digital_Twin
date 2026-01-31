@@ -79,6 +79,10 @@ export interface DailyEntry {
   mealsCount: number | null;
   mealsCost: number | null; // Total food spending for the day
   carbsGrams: number | null;
+  proteinGrams: number | null;
+  fiberGrams: number | null;
+  sugarFlag: boolean | null; // Had sugary items
+  mealsDescription: string | null; // e.g., "Chai Tea Latte, Steak"
   caloriesTotal: number | null;
   
   // Exercise

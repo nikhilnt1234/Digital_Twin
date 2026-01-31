@@ -299,6 +299,10 @@ const App: React.FC = () => {
         mealsCount: null,
         mealsCost: null,
         carbsGrams: null,
+        proteinGrams: null,
+        fiberGrams: null,
+        sugarFlag: null,
+        mealsDescription: null,
         caloriesTotal: null,
         exerciseMinutes: null,
         exerciseType: null,
@@ -319,8 +323,14 @@ const App: React.FC = () => {
         carbSugarItem: data.carbSugarItem,
         diningOutSpend: data.diningOutSpend,
         mealsCost: data.diningOutSpend ?? base.mealsCost,
+        // Nutritional data for Chai Tea Latte and Steak
+        mealsDescription: 'Chai Tea Latte, Steak',
+        proteinGrams: 25,
+        fiberGrams: 20,
+        carbsGrams: 220,
+        sugarFlag: true, // Sweet from Chai Tea Latte
         faceCheckImage: data.faceCheckImage,
-        notes: 'Meals: Chai Tea Latte, Steak\n' + (base.notes ? base.notes + '\n' : '') + `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
+        notes: `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
         updatedAt: new Date().toISOString(),
       };
     });

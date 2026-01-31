@@ -1,10 +1,11 @@
 /**
  * Lens Voice Bridge hook for BodyTwin UI
  * Connects to Vocal Bridge Lens agent for health coaching and insights
+ * Handles transcriptions similar to Mirror's Nova agent
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Room, RoomEvent, Track } from 'livekit-client';
+import { Room, RoomEvent, Track, RoomOptions, DataPacket_Kind } from 'livekit-client';
 
 export interface LensMessage {
   id: string;
@@ -44,26 +45,71 @@ export function useLensVoiceBridge(options: UseLensVoiceBridgeOptions = {}) {
 
   // Setup room event handlers
   useEffect(() => {
-    const handleDataReceived = (payload: Uint8Array) => {
+    const handleDataReceived = (payload: Uint8Array, participant?: import('livekit-client').RemoteParticipant) => {
       try {
         const text = new TextDecoder().decode(payload);
         const data = JSON.parse(text);
 
         console.log('[LensVoiceBridge] Data received:', data);
 
-        // Handle transcription or agent messages
+        // Handle various transcription formats from Vocal Bridge
+        // Format 1: { type: 'transcription', text: '...', participant: 'agent'|'user' }
+        // Format 2: { type: 'transcript', transcript: '...', is_final: true, source: 'agent'|'user' }
+        // Format 3: { text: '...', speaker: 'agent'|'user' }
+        // Format 4: { type: 'agent_message', content: '...' }
+        // Format 5: { type: 'user_transcript', text: '...' }
+        
+        let messageText: string | null = null;
+        let speaker: 'lens' | 'user' = 'lens';
+        
         if (data.type === 'transcription' && data.text) {
-          if (onMessageReceivedRef.current) {
+          messageText = data.text;
+          speaker = data.participant === 'user' || data.source === 'user' ? 'user' : 'lens';
+        } else if (data.type === 'transcript' && data.transcript && data.is_final) {
+          messageText = data.transcript;
+          speaker = data.source === 'user' ? 'user' : 'lens';
+        } else if (data.type === 'agent_message' && data.content) {
+          messageText = data.content;
+          speaker = 'lens';
+        } else if (data.type === 'user_transcript' && data.text) {
+          messageText = data.text;
+          speaker = 'user';
+        } else if (data.text && typeof data.text === 'string') {
+          messageText = data.text;
+          speaker = data.speaker === 'user' || data.participant === 'user' ? 'user' : 'lens';
+        } else if (data.message && typeof data.message === 'string') {
+          messageText = data.message;
+          speaker = data.role === 'user' ? 'user' : 'lens';
+        }
+        
+        // Also check if it's from the agent participant
+        if (participant && participant.identity && participant.identity.toLowerCase().includes('agent')) {
+          speaker = 'lens';
+        }
+
+        if (messageText && onMessageReceivedRef.current) {
+          onMessageReceivedRef.current({
+            id: `lens-${++messageIdRef.current}`,
+            speaker,
+            text: messageText,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (e) {
+        // Might not be JSON, could be raw text
+        try {
+          const text = new TextDecoder().decode(payload);
+          if (text && text.length > 0 && onMessageReceivedRef.current) {
             onMessageReceivedRef.current({
               id: `lens-${++messageIdRef.current}`,
-              speaker: data.participant === 'agent' ? 'lens' : 'user',
-              text: data.text,
+              speaker: 'lens',
+              text: text,
               timestamp: Date.now(),
             });
           }
+        } catch {
+          console.warn('[LensVoiceBridge] Failed to parse data:', e);
         }
-      } catch (e) {
-        console.warn('[LensVoiceBridge] Failed to parse data:', e);
       }
     };
 

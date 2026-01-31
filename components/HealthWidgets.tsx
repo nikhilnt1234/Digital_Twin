@@ -23,6 +23,9 @@ export const VitalsPanel: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntry
     </div>
   );
 
+  // Check if we have meals data
+  const hasMealsData = todayEntry?.mealsDescription || todayEntry?.proteinGrams || todayEntry?.carbsGrams;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm h-full">
       <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -38,6 +41,56 @@ export const VitalsPanel: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntry
         <VitalRow label="Exercise" value={exerciseMinutes || '--'} unit="min" highlight={!!todayEntry?.exerciseMinutes} />
         <VitalRow label="Activity" value={steps ? steps.toLocaleString() : '--'} unit="steps" avg={(inputs.stepsPerDay - 500).toLocaleString()} />
       </div>
+
+      {/* Meals Section */}
+      {hasMealsData && (
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <svg className="w-3.5 h-3.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Today's Meals
+          </h4>
+          
+          {/* Meal Description */}
+          {todayEntry?.mealsDescription && (
+            <div className="bg-amber-50 rounded-lg p-3 mb-3">
+              <div className="text-xs text-amber-600 font-medium mb-1">What you ate</div>
+              <div className="text-sm font-semibold text-amber-800">{todayEntry.mealsDescription}</div>
+              {todayEntry?.sugarFlag && (
+                <div className="mt-1 inline-flex items-center gap-1 text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-medium">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  Contains Sugar
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Nutritional Grid */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+              <div className="text-[10px] text-slate-400 font-medium uppercase">Protein</div>
+              <div className="text-lg font-mono font-bold text-emerald-600">
+                {todayEntry?.proteinGrams ?? '--'}<span className="text-xs font-normal text-slate-400">g</span>
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+              <div className="text-[10px] text-slate-400 font-medium uppercase">Fiber</div>
+              <div className="text-lg font-mono font-bold text-blue-600">
+                {todayEntry?.fiberGrams ?? '--'}<span className="text-xs font-normal text-slate-400">g</span>
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+              <div className="text-[10px] text-slate-400 font-medium uppercase">Carbs</div>
+              <div className="text-lg font-mono font-bold text-amber-600">
+                {todayEntry?.carbsGrams ?? '--'}<span className="text-xs font-normal text-slate-400">g</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
