@@ -443,7 +443,7 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
           carbSugarItem={sessionData.carbSugarItem}
           diningOutSpend={sessionData.diningOutSpend}
           targetDiningToday={15}
-          streakDays={0}
+          streakDays={5}
           highlightField={highlightField}
         />
       )}
