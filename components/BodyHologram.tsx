@@ -1,13 +1,18 @@
 
 import React from 'react';
-import { UserInputs } from '../types';
+import { UserInputs, DailyEntry } from '../types';
 
-export const BodyHologram: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
+export const BodyHologram: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntry | null }> = ({ inputs, todayEntry }) => {
+  // Use todayEntry values if available, otherwise fall back to inputs
+  const sleepHours = todayEntry?.sleepHours ?? inputs.averageSleep;
+  const exerciseMinutes = todayEntry?.exerciseMinutes ?? 0;
+  const mealsCost = todayEntry?.mealsCost ?? todayEntry?.diningOutSpend ?? 0;
+  
   // Logic for identifying hotspots based on health data
   const alerts = [];
 
   // Brain/Sleep (Top Head)
-  if (inputs.averageSleep > 0 && inputs.averageSleep < 6.5) {
+  if (sleepHours > 0 && sleepHours < 6.5) {
       alerts.push({ id: 'brain', x: 50, y: 15, color: '#fbbf24', label: 'LOW RECOVERY' });
   }
 
@@ -25,7 +30,7 @@ export const BodyHologram: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
   const heightM = inputs.heightCm / 100;
   const bmi = inputs.heightCm > 0 ? inputs.weightKg / (heightM * heightM) : 0;
   
-  if (inputs.hba1c > 5.7 || bmi > 30) {
+  if (inputs.hba1c > 5.7 || bmi > 30 || mealsCost > 40) {
        alerts.push({ id: 'gut', x: 50, y: 65, color: '#f97316', label: 'METABOLIC' });
   }
   
@@ -33,9 +38,16 @@ export const BodyHologram: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
   if (inputs.eGFR > 0 && inputs.eGFR < 60) {
       alerts.push({ id: 'kidneys', x: 58, y: 60, color: '#ef4444', label: 'RENAL FUNC' });
   }
+  
+  // Legs/Movement (Lower Body)
+  if (exerciseMinutes < 20) {
+      alerts.push({ id: 'legs', x: 50, y: 130, color: '#fbbf24', label: 'LOW MOVEMENT' });
+  } else if (exerciseMinutes >= 30) {
+      alerts.push({ id: 'legs', x: 50, y: 130, color: '#10b981', label: 'ACTIVE' });
+  }
 
   return (
-    <div className="relative flex flex-col items-center justify-center py-6 bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 h-full min-h-[500px] group transition-all duration-700 hover:border-cyan-500/30">
+    <div className="relative flex flex-col items-center bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 group transition-all duration-700 hover:border-cyan-500/30" style={{ height: '520px' }}>
         
         {/* === Background Grid & Effects === */}
         <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ 
@@ -50,15 +62,15 @@ export const BodyHologram: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
         <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/10 via-transparent to-blue-500/5 pointer-events-none"></div>
 
         {/* Interactive HUD Circles */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-             <div className="w-[120%] h-[120%] border border-cyan-500/10 rounded-full animate-[spin_20s_linear_infinite]"></div>
-             <div className="w-[90%] h-[90%] border border-blue-500/5 rounded-full absolute border-dashed animate-[spin_15s_linear_infinite_reverse]"></div>
-             <div className="w-[70%] h-[70%] border border-cyan-400/10 rounded-full absolute animate-[pulse_4s_ease-in-out_infinite]"></div>
+        <div className="absolute top-[100px] left-0 right-0 bottom-[50px] flex items-center justify-center pointer-events-none overflow-hidden">
+             <div className="w-[300px] h-[300px] border border-cyan-500/10 rounded-full animate-[spin_20s_linear_infinite]"></div>
+             <div className="w-[220px] h-[220px] border border-blue-500/5 rounded-full absolute border-dashed animate-[spin_15s_linear_infinite_reverse]"></div>
+             <div className="w-[160px] h-[160px] border border-cyan-400/10 rounded-full absolute animate-[pulse_4s_ease-in-out_infinite]"></div>
         </div>
 
         {/* === Main SVG Render === */}
-        <div className="relative z-10 w-full h-full max-w-[280px] flex items-center justify-center">
-            <svg viewBox="0 0 100 220" className="w-full h-full drop-shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+        <div className="relative z-10 w-full max-w-[180px] mx-auto mt-[90px]">
+            <svg viewBox="0 0 100 220" className="w-full h-[320px] drop-shadow-[0_0_20px_rgba(6,182,212,0.4)]">
                 <defs>
                     <linearGradient id="holoGrad" x1="0%" y1="0%" x2="0%" y2="100%">
                         <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.5" />
@@ -170,6 +182,46 @@ export const BodyHologram: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
             </svg>
         </div>
         
+        {/* Today's Vitals from Mirror Check-in */}
+        {todayEntry && (todayEntry.weightKg || todayEntry.sleepHours || todayEntry.exerciseMinutes || todayEntry.mealsCost || todayEntry.diningOutSpend) && (
+          <div className="absolute top-[52px] left-2 right-2 flex justify-center z-20">
+            <div className="flex items-center gap-3 bg-slate-900/80 border border-cyan-500/30 px-4 py-2 rounded-lg backdrop-blur-sm">
+              {todayEntry.weightKg && (
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+                  </svg>
+                  <span className="text-[10px] font-mono text-cyan-300">{todayEntry.weightKg}kg</span>
+                </div>
+              )}
+              {todayEntry.sleepHours && (
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                  <span className="text-[10px] font-mono text-indigo-300">{todayEntry.sleepHours}hrs</span>
+                </div>
+              )}
+              {todayEntry.exerciseMinutes && (
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className="text-[10px] font-mono text-emerald-300">{todayEntry.exerciseMinutes}min</span>
+                </div>
+              )}
+              {(todayEntry.mealsCost || todayEntry.diningOutSpend) && (
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-[10px] font-mono text-amber-300">${todayEntry.mealsCost || todayEntry.diningOutSpend}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Technical HUD Overlay (Corners) */}
         <div className="absolute top-4 left-4 text-[9px] font-mono text-cyan-500/60 leading-tight select-none uppercase">
             [SYS_BIO_ENGINE: v4.2]<br/>
@@ -183,7 +235,7 @@ export const BodyHologram: React.FC<{ inputs: UserInputs }> = ({ inputs }) => {
         </div>
 
         {/* Footer Status Bar */}
-        <div className="absolute bottom-6 left-0 right-0 flex justify-center">
+        <div className="absolute bottom-3 left-0 right-0 flex justify-center z-20">
             <div className="flex items-center gap-4 bg-slate-900/90 border border-slate-700 px-6 py-2 rounded-full backdrop-blur-md shadow-lg group-hover:border-cyan-500/50 transition-colors">
                 <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${alerts.length > 0 ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_#f43f5e]' : 'bg-cyan-500 animate-pulse shadow-[0_0_8px_#06b6d4]'}`}></div>

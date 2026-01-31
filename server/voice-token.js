@@ -14,6 +14,7 @@ const PORT = 3001;
 const VOCAL_BRIDGE_URL = 'https://vocalbridgeai.com/api/v1/token';
 
 const apiKey = process.env.VOCAL_BRIDGE_API_KEY || process.env.VITE_VOCAL_BRIDGE_API_KEY;
+const lensApiKey = process.env.VOCAL_BRIDGE_LENS_API_KEY || process.env.VITE_VOCAL_BRIDGE_LENS_API_KEY;
 
 // In-memory store for daily log from webhook (POST /api/daily-log). Frontend gets data from Vocal Bridge via LiveKit.
 let latestDailyLog = null; // { sleepHours, exerciseMinutes, mealsCost, receivedAt }
@@ -31,6 +32,7 @@ function parseNum(v) {
 const server = createServer(async (req, res) => {
   const path = req.url?.split('?')[0];
   const isVoiceToken = path === '/api/voice-token' || path === '/api/voice-token/';
+  const isVoiceTokenLens = path === '/api/voice-token-lens' || path === '/api/voice-token-lens/';
   const isDailyLog = path === '/api/daily-log' || path === '/api/daily-log/';
 
   if (isDailyLog) {
@@ -54,6 +56,45 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(405, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Method not allowed' }));
+    return;
+  }
+
+  // Handle Lens token endpoint
+  if (isVoiceTokenLens) {
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Method not allowed' }));
+      return;
+    }
+
+    if (!lensApiKey) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'VOCAL_BRIDGE_LENS_API_KEY not set' }));
+      return;
+    }
+
+    try {
+      const participantName = req.method === 'POST' && req.headers['content-type']?.includes('application/json')
+        ? await parseJsonBody(req).then(b => b?.participant_name || 'User').catch(() => 'User')
+        : 'User';
+
+      const response = await fetch(VOCAL_BRIDGE_URL, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': lensApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ participant_name: participantName }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      res.writeHead(response.ok ? 200 : response.status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message || 'Lens token request failed' }));
+    }
     return;
   }
 
@@ -113,5 +154,6 @@ function parseJsonBody(req) {
 
 server.listen(PORT, 'localhost', () => {
   console.log(`Vocal Bridge token proxy: http://localhost:${PORT}/api/voice-token`);
-  console.log(`Daily log webhook:       http://localhost:${PORT}/api/daily-log (POST)`);
+  console.log(`Vocal Bridge Lens proxy:  http://localhost:${PORT}/api/voice-token-lens`);
+  console.log(`Daily log webhook:        http://localhost:${PORT}/api/daily-log (POST)`);
 });

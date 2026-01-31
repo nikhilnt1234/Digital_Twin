@@ -16,6 +16,14 @@ export default defineConfig(({ mode }) => {
             target: 'http://localhost:3001',
             changeOrigin: true,
           },
+          '/api/voice-token-lens': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
+          '/api/daily-log': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
         },
       },
       plugins: [react()],
