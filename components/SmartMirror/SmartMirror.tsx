@@ -402,8 +402,8 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
   // Keep ref updated for async callbacks
   handleCompleteRef.current = handleComplete;
 
-  // Use session sleep if captured, otherwise show existing entry's sleep
-  const displaySleepHours = sessionData.sleepHours ?? existingEntry?.sleepHours ?? null;
+  // Only use session data - don't pre-populate from existing entry
+  const displaySleepHours = sessionData.sleepHours;
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden">
@@ -443,7 +443,7 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
           carbSugarItem={sessionData.carbSugarItem}
           diningOutSpend={sessionData.diningOutSpend}
           targetDiningToday={15}
-          streakDays={5}
+          streakDays={0}
           highlightField={highlightField}
         />
       )}
