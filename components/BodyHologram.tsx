@@ -47,7 +47,7 @@ export const BodyHologram: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntr
   }
 
   return (
-    <div className="relative flex flex-col items-center justify-start pt-2 pb-6 bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 h-full min-h-[420px] group transition-all duration-700 hover:border-cyan-500/30">
+    <div className="relative flex flex-col items-center bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 group transition-all duration-700 hover:border-cyan-500/30" style={{ height: '520px' }}>
         
         {/* === Background Grid & Effects === */}
         <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ 
@@ -62,15 +62,15 @@ export const BodyHologram: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntr
         <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/10 via-transparent to-blue-500/5 pointer-events-none"></div>
 
         {/* Interactive HUD Circles */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-             <div className="w-[120%] h-[120%] border border-cyan-500/10 rounded-full animate-[spin_20s_linear_infinite]"></div>
-             <div className="w-[90%] h-[90%] border border-blue-500/5 rounded-full absolute border-dashed animate-[spin_15s_linear_infinite_reverse]"></div>
-             <div className="w-[70%] h-[70%] border border-cyan-400/10 rounded-full absolute animate-[pulse_4s_ease-in-out_infinite]"></div>
+        <div className="absolute top-[100px] left-0 right-0 bottom-[50px] flex items-center justify-center pointer-events-none overflow-hidden">
+             <div className="w-[300px] h-[300px] border border-cyan-500/10 rounded-full animate-[spin_20s_linear_infinite]"></div>
+             <div className="w-[220px] h-[220px] border border-blue-500/5 rounded-full absolute border-dashed animate-[spin_15s_linear_infinite_reverse]"></div>
+             <div className="w-[160px] h-[160px] border border-cyan-400/10 rounded-full absolute animate-[pulse_4s_ease-in-out_infinite]"></div>
         </div>
 
         {/* === Main SVG Render === */}
-        <div className="relative z-10 w-full max-w-[220px] flex items-center justify-center mt-2">
-            <svg viewBox="0 0 100 220" className="w-full h-auto drop-shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+        <div className="relative z-10 w-full max-w-[180px] mx-auto mt-[90px]">
+            <svg viewBox="0 0 100 220" className="w-full h-[320px] drop-shadow-[0_0_20px_rgba(6,182,212,0.4)]">
                 <defs>
                     <linearGradient id="holoGrad" x1="0%" y1="0%" x2="0%" y2="100%">
                         <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.5" />
@@ -184,7 +184,7 @@ export const BodyHologram: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntr
         
         {/* Today's Vitals from Mirror Check-in */}
         {todayEntry && (todayEntry.weightKg || todayEntry.sleepHours || todayEntry.exerciseMinutes || todayEntry.mealsCost || todayEntry.diningOutSpend) && (
-          <div className="absolute top-12 left-2 right-2 flex justify-center z-20">
+          <div className="absolute top-[52px] left-2 right-2 flex justify-center z-20">
             <div className="flex items-center gap-3 bg-slate-900/80 border border-cyan-500/30 px-4 py-2 rounded-lg backdrop-blur-sm">
               {todayEntry.weightKg && (
                 <div className="flex items-center gap-1.5">
@@ -235,7 +235,7 @@ export const BodyHologram: React.FC<{ inputs: UserInputs; todayEntry?: DailyEntr
         </div>
 
         {/* Footer Status Bar */}
-        <div className="absolute bottom-3 left-0 right-0 flex justify-center">
+        <div className="absolute bottom-3 left-0 right-0 flex justify-center z-20">
             <div className="flex items-center gap-4 bg-slate-900/90 border border-slate-700 px-6 py-2 rounded-full backdrop-blur-md shadow-lg group-hover:border-cyan-500/50 transition-colors">
                 <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${alerts.length > 0 ? 'bg-rose-500 animate-pulse shadow-[0_0_8px_#f43f5e]' : 'bg-cyan-500 animate-pulse shadow-[0_0_8px_#06b6d4]'}`}></div>
