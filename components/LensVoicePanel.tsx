@@ -1,6 +1,6 @@
 /**
- * Lens Voice Panel - Voice-enabled health coaching for BodyTwin UI
- * Chat interface matching the Mirror's ConversationRail style
+ * Lens Voice Panel - Health Coach chat interface
+ * Matching the Mirror's ConversationRail style exactly
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -11,29 +11,31 @@ export interface LensVoicePanelProps {
   onClose: () => void;
 }
 
-// Status chip matching mirror style
-const StatusChip: React.FC<{ status: string; isMicEnabled: boolean }> = ({ status, isMicEnabled }) => {
-  const getStatusConfig = () => {
-    switch (status) {
-      case 'connecting':
-        return { label: 'Connecting...', color: 'bg-amber-500', pulse: true };
-      case 'connected':
-        return { label: isMicEnabled ? 'Listening...' : 'Mic Muted', color: isMicEnabled ? 'bg-emerald-500' : 'bg-rose-500', pulse: isMicEnabled };
-      case 'speaking':
-        return { label: 'Speaking...', color: 'bg-violet-500', pulse: true };
-      case 'error':
-        return { label: 'Error', color: 'bg-rose-500', pulse: false };
-      default:
-        return { label: 'Ready', color: 'bg-slate-400', pulse: false };
-    }
-  };
+// Status chip matching mirror's MirrorStatusChip
+const StatusChip: React.FC<{ status: string; isMicEnabled: boolean; updatedField?: string }> = ({ status, isMicEnabled, updatedField }) => {
+  if (status === 'updated' && updatedField) {
+    return (
+      <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 px-4 py-2 rounded-full">
+        <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+        <span className="text-emerald-300 text-sm font-medium">{updatedField} logged</span>
+      </div>
+    );
+  }
 
-  const config = getStatusConfig();
+  const config = {
+    connecting: { label: 'Connecting...', color: 'bg-amber-500', pulse: true, icon: '⏳' },
+    connected: { label: isMicEnabled ? 'Listening...' : 'Mic Muted', color: isMicEnabled ? 'bg-emerald-500' : 'bg-rose-500', pulse: isMicEnabled, icon: isMicEnabled ? '🎙️' : '🔇' },
+    speaking: { label: 'Coach speaking...', color: 'bg-violet-500', pulse: true, icon: '🔊' },
+    error: { label: 'Error', color: 'bg-rose-500', pulse: false, icon: '⚠️' },
+    idle: { label: 'Ready to connect', color: 'bg-slate-400', pulse: false, icon: '💬' },
+  }[status] || { label: 'Ready', color: 'bg-slate-400', pulse: false, icon: '💬' };
 
   return (
-    <div className="flex items-center gap-2 bg-white/15 px-3 py-1.5 rounded-full shadow-md">
-      <div className={`w-2 h-2 rounded-full ${config.color} ${config.pulse ? 'animate-pulse' : ''}`} />
-      <span className="text-white text-xs font-medium drop-shadow-md">{config.label}</span>
+    <div className="flex items-center gap-2 bg-white/15 px-4 py-2 rounded-full shadow-md">
+      <div className={`w-2.5 h-2.5 rounded-full ${config.color} ${config.pulse ? 'animate-pulse' : ''}`} />
+      <span className="text-white text-sm font-medium drop-shadow-md">{config.label}</span>
     </div>
   );
 };
@@ -43,8 +45,10 @@ export const LensVoicePanel: React.FC<LensVoicePanelProps> = ({
   onClose,
 }) => {
   const [messages, setMessages] = useState<LensMessage[]>([]);
-  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'updated' | 'error'>('idle');
+  const [updatedField, setUpdatedField] = useState<string | undefined>();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messageIdCounter = useRef(0);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -58,15 +62,25 @@ export const LensVoicePanel: React.FC<LensVoicePanelProps> = ({
     setMessages(prev => [...prev, message]);
   }, []);
 
-  const handleStatusChange = useCallback((newStatus: typeof status) => {
-    setStatus(newStatus);
+  const handleStatusChange = useCallback((newStatus: 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'error') => {
+    console.log('[LensVoicePanel] Status changed:', newStatus);
+    if (newStatus === 'connected') {
+      setStatus('connected');
+    } else if (newStatus === 'connecting') {
+      setStatus('connecting');
+    } else if (newStatus === 'error') {
+      setStatus('error');
+    } else {
+      setStatus(newStatus);
+    }
   }, []);
 
   const handleSessionEnd = useCallback(() => {
     setStatus('idle');
     // Add a goodbye message
+    const id = `lens-${++messageIdCounter.current}`;
     setMessages(prev => [...prev, {
-      id: `lens-end-${Date.now()}`,
+      id,
       speaker: 'lens',
       text: "Great talking with you! Remember, small consistent changes lead to big results. See you next time!",
       timestamp: Date.now(),
@@ -98,10 +112,11 @@ export const LensVoicePanel: React.FC<LensVoicePanelProps> = ({
 
   const handleConnect = async () => {
     // Add welcome message when connecting
+    const id = `lens-${++messageIdCounter.current}`;
     setMessages([{
-      id: `lens-welcome-${Date.now()}`,
+      id,
       speaker: 'lens',
-      text: "Hi! I'm your Health Coach. I can help you understand your health data, answer questions about your metrics, and provide personalized wellness advice. What would you like to know?",
+      text: "Hi! I'm your Health Coach. Ask me anything about your health data, get personalized insights, or discuss wellness goals. What would you like to know?",
       timestamp: Date.now(),
     }]);
     await connect();
@@ -110,30 +125,30 @@ export const LensVoicePanel: React.FC<LensVoicePanelProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-end p-4 pointer-events-none">
+    <>
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm pointer-events-auto"
+        className="fixed inset-0 z-[140] bg-black/30"
         onClick={handleClose}
       />
 
-      {/* Panel - Matching Mirror's ConversationRail style */}
-      <div 
-        className="relative z-10 w-96 flex flex-col pointer-events-auto mr-2"
+      {/* Panel - Matching Mirror's ConversationRail exactly */}
+      <div
+        className="fixed right-6 top-1/2 -translate-y-1/2 w-96 z-[150] flex flex-col"
         style={{
           background: 'rgba(0, 0, 0, 0.35)',
           backdropFilter: 'blur(16px)',
           borderRadius: '20px',
           border: '1px solid rgba(255, 255, 255, 0.15)',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-          maxHeight: '80vh',
+          maxHeight: '70vh',
         }}
       >
-        {/* Header - Mirror style */}
+        {/* Header - Matching mirror style */}
         <div className="p-4 border-b border-white/15 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
-              <svg className="w-5 h-5 text-white drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+              <svg className="w-4 h-4 text-white drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
             </div>
@@ -149,48 +164,38 @@ export const LensVoicePanel: React.FC<LensVoicePanelProps> = ({
           </button>
         </div>
 
-        {/* Content */}
-        {!isConnected && !isConnecting ? (
-          /* Welcome State */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center mb-4">
-              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500/30 to-teal-500/30 flex items-center justify-center animate-pulse">
-                <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        {/* Messages - Matching mirror's ConversationRail */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0" style={{ minHeight: '300px' }}>
+          {!isConnected && !isConnecting && messages.length === 0 ? (
+            /* Welcome State */
+            <div className="flex flex-col items-center justify-center text-center py-8">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
               </div>
+              <h3 className="text-white font-semibold mb-2 drop-shadow-lg">Talk to Health Coach</h3>
+              <p className="text-white/60 text-sm mb-4 max-w-xs">
+                Get personalized insights about your health data and wellness guidance.
+              </p>
+              {error && (
+                <div className="mb-4 p-3 bg-rose-500/20 border border-rose-500/30 rounded-xl text-sm text-rose-300 max-w-xs">
+                  {error}
+                </div>
+              )}
+              <button
+                onClick={handleConnect}
+                className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold rounded-xl transition-all shadow-lg flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+                Start Conversation
+              </button>
             </div>
-
-            <h3 className="text-white font-semibold text-lg mb-2 drop-shadow-lg">Talk to Health Coach</h3>
-            <p className="text-white/60 text-sm mb-6 max-w-xs leading-relaxed">
-              Get personalized insights about your health data, ask questions, and receive wellness guidance.
-            </p>
-
-            {error && (
-              <div className="mb-4 p-3 bg-rose-500/20 border border-rose-500/30 rounded-xl text-sm text-rose-300 max-w-xs">
-                {error}
-              </div>
-            )}
-
-            <button
-              onClick={handleConnect}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold rounded-xl transition-all shadow-lg hover:shadow-emerald-500/30 flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-              Start Conversation
-            </button>
-          </div>
-        ) : (
-          /* Chat State - Matching Mirror's ConversationRail */
-          <>
-            {/* Messages - Mirror style */}
-            <div 
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0"
-              style={{ minHeight: '350px', maxHeight: '450px' }}
-            >
+          ) : (
+            /* Chat Messages - Exact mirror style */
+            <>
               {messages.map((msg) => (
                 <div
                   key={msg.id}
@@ -211,7 +216,7 @@ export const LensVoicePanel: React.FC<LensVoicePanelProps> = ({
                 </div>
               ))}
 
-              {/* Connecting indicator */}
+              {/* Connecting/thinking indicator */}
               {isConnecting && (
                 <div className="flex justify-start">
                   <div className="bg-white/15 rounded-2xl px-4 py-3 shadow-md">
@@ -225,67 +230,77 @@ export const LensVoicePanel: React.FC<LensVoicePanelProps> = ({
                 </div>
               )}
 
-              {/* Empty state hint */}
-              {messages.length === 1 && isConnected && (
-                <div className="text-center text-white/40 text-xs py-4">
-                  <div className="flex items-center justify-center gap-2 text-emerald-400 mb-2">
+              {/* Connected hint when no messages yet */}
+              {isConnected && messages.length === 1 && (
+                <div className="text-center text-white/50 text-xs py-2">
+                  <div className="flex items-center justify-center gap-2 text-emerald-400 mb-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     Connected — start speaking
                   </div>
-                  <p>Ask about your health metrics, trends, or get wellness advice.</p>
                 </div>
               )}
-            </div>
+            </>
+          )}
+        </div>
 
-            {/* Controls - Mirror style */}
-            <div className="p-4 border-t border-white/15 flex flex-col gap-3 shrink-0">
-              {/* Status */}
-              <div className="flex justify-center">
-                <StatusChip status={isConnecting ? 'connecting' : isConnected ? 'connected' : 'idle'} isMicEnabled={isMicEnabled} />
-              </div>
-              
-              {/* Buttons */}
-              <div className="flex items-center justify-center gap-3">
-                {/* Mic Toggle */}
-                <button
-                  onClick={toggleMic}
-                  disabled={!isConnected}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg ${
-                    isMicEnabled
-                      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/30'
-                      : 'bg-gradient-to-br from-rose-500 to-pink-600 shadow-rose-500/30'
-                  } ${!isConnected ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
-                >
-                  {isMicEnabled ? (
-                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                    </svg>
-                  )}
-                </button>
+        {/* Status Chip - Matching mirror */}
+        <div className="p-4 border-t border-white/15 flex flex-col gap-3 shrink-0">
+          <div className="flex justify-center">
+            <StatusChip 
+              status={isConnecting ? 'connecting' : isConnected ? 'connected' : status} 
+              isMicEnabled={isMicEnabled}
+              updatedField={updatedField}
+            />
+          </div>
 
-                {/* End Session */}
-                <button
-                  onClick={disconnect}
-                  disabled={!isConnected}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-md ${
-                    isConnected
-                      ? 'bg-white/15 hover:bg-white/25 text-white'
-                      : 'bg-white/5 text-white/30 cursor-not-allowed'
-                  }`}
-                >
-                  End Session
-                </button>
-              </div>
+          {/* Controls - only show when connected */}
+          {(isConnected || isConnecting) && (
+            <div className="flex items-center justify-center gap-3">
+              {/* Mic Toggle - matching mirror */}
+              <button
+                onClick={toggleMic}
+                disabled={!isConnected}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-2xl ${
+                  isMicEnabled
+                    ? 'bg-emerald-500 hover:bg-emerald-600'
+                    : 'bg-rose-500 hover:bg-rose-600'
+                } ${!isConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isMicEnabled ? (
+                  <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                ) : (
+                  <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  </svg>
+                )}
+              </button>
+
+              {/* End Session */}
+              <button
+                onClick={() => {
+                  disconnect();
+                  setStatus('idle');
+                }}
+                disabled={!isConnected && !isConnecting}
+                className="px-4 py-2 bg-white/15 hover:bg-white/25 text-white font-medium rounded-xl shadow-md transition-all disabled:opacity-50"
+              >
+                End Session
+              </button>
             </div>
-          </>
-        )}
+          )}
+
+          {/* Error display */}
+          {error && (
+            <div className="text-center text-rose-300 text-xs bg-rose-500/20 px-3 py-2 rounded-lg">
+              {error}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
