@@ -4,7 +4,7 @@
 
 import React from 'react';
 
-export type StatusType = 'listening' | 'saving' | 'updated' | 'capturing' | 'idle';
+export type StatusType = 'listening' | 'saving' | 'updated' | 'capturing' | 'idle' | 'complete';
 
 interface MirrorStatusChipProps {
   status: StatusType;
@@ -56,6 +56,15 @@ export const MirrorStatusChip: React.FC<MirrorStatusChipProps> = ({ status, upda
       icon: null,
       text: '',
       className: 'opacity-0',
+    },
+    complete: {
+      icon: (
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      text: 'Check-in Complete',
+      className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
     },
   };
 

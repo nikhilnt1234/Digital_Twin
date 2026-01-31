@@ -1,6 +1,7 @@
 /**
  * SmartMirror - Main orchestrator for the wellness mirror experience
  * Manages session flow: intro → questions → face-check → summary → complete
+ * Supports both demo mode (click-to-advance) and live mode (Vocal Bridge)
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -9,6 +10,7 @@ import { MetricsPanel } from './MetricsPanel';
 import { ConversationRail, ConversationMessage } from './ConversationRail';
 import { FaceCapture } from './FaceCapture';
 import { StatusType } from './MirrorStatusChip';
+import { useMirrorVoiceBridge, MirrorVoiceData } from './useMirrorVoiceBridge';
 import type { DailyEntry } from '../../types';
 
 // Session phases
@@ -16,6 +18,9 @@ type SessionPhase = 'intro' | 'questions' | 'face-check' | 'summary' | 'complete
 
 // Face capture phases
 type FaceCapturePhase = 'hidden' | 'frame' | 'countdown' | 'captured';
+
+// Voice modes
+type VoiceMode = 'demo' | 'live';
 
 interface MirrorSessionData {
   sleepHours: number | null;
@@ -29,6 +34,8 @@ interface MirrorSessionData {
 interface SmartMirrorProps {
   onComplete: (data: MirrorSessionData) => void;
   existingEntry: DailyEntry | null;
+  /** Enable live Vocal Bridge mode instead of demo */
+  liveMode?: boolean;
 }
 
 // Script for the demo flow - 4 questions covering sleep, exercise, meals, and spending
@@ -68,7 +75,10 @@ const DEMO_SCRIPT = {
   summary: "All set! Your dashboard is updated with today's check-in. See you tomorrow!",
 };
 
-export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEntry }) => {
+export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEntry, liveMode = false }) => {
+  // Voice mode state - can toggle between demo and live
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>(liveMode ? 'live' : 'demo');
+  
   // Camera state
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -103,6 +113,100 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const messageIdCounter = useRef(0);
   const introShownRef = useRef(false);
+  
+  // Track which fields have been updated (for question progress in live mode)
+  const fieldsUpdatedRef = useRef<Set<string>>(new Set());
+  
+  // Voice Bridge callbacks
+  const handleVoiceDataUpdate = useCallback((field: keyof MirrorVoiceData, value: number | boolean | null) => {
+    console.log('[SmartMirror] Voice data update:', field, value);
+    
+    // Map field to highlight and session data
+    switch (field) {
+      case 'sleepHours':
+        setSessionData(prev => ({ ...prev, sleepHours: value as number | null }));
+        setHighlightField('sleep');
+        setUpdatedField('Sleep');
+        fieldsUpdatedRef.current.add('sleep');
+        break;
+      case 'exerciseMinutes':
+        setSessionData(prev => ({ ...prev, movementMinutes: value as number | null }));
+        setHighlightField('movement');
+        setUpdatedField('Movement');
+        fieldsUpdatedRef.current.add('movement');
+        break;
+      case 'carbsBool':
+        setSessionData(prev => ({ ...prev, carbSugarFlag: value as boolean | null }));
+        setHighlightField('carb');
+        setUpdatedField('Carb Flag');
+        fieldsUpdatedRef.current.add('carb');
+        break;
+      case 'mealsCost':
+        setSessionData(prev => ({ ...prev, diningOutSpend: value as number | null }));
+        setHighlightField('dining');
+        setUpdatedField('Dining Out');
+        fieldsUpdatedRef.current.add('dining');
+        break;
+    }
+    
+    setStatus('updated');
+    
+    // Update question count based on fields updated
+    setCurrentQuestionIndex(fieldsUpdatedRef.current.size);
+    
+    // Clear highlight after a delay
+    setTimeout(() => {
+      setHighlightField(null);
+      setStatus('listening');
+    }, 2000);
+  }, []);
+  
+  const handleVoiceStatusChange = useCallback((newStatus: 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'error') => {
+    console.log('[SmartMirror] Voice status:', newStatus);
+    if (newStatus === 'speaking') {
+      setStatus('idle');
+    } else if (newStatus === 'listening') {
+      setStatus('listening');
+    } else if (newStatus === 'connecting') {
+      setStatus('saving');
+    } else if (newStatus === 'error') {
+      setStatus('idle');
+    }
+  }, []);
+  
+  const handleVoiceMessageReceived = useCallback((message: ConversationMessage) => {
+    console.log('[SmartMirror] Voice message:', message);
+    setMessages(prev => [...prev, message]);
+    
+    // Move to questions phase after first message
+    if (phase === 'intro') {
+      setPhase('questions');
+    }
+  }, [phase]);
+  
+  // Handle voice session end (agent disconnects)
+  const handleVoiceSessionEnd = useCallback(() => {
+    console.log('[SmartMirror] Voice session ended');
+    setPhase('summary');
+    setStatus('complete');
+    
+    // Add a completion message
+    const id = `msg_${messageIdCounter.current++}`;
+    setMessages(prev => [...prev, {
+      id,
+      speaker: 'nova',
+      text: "All set! Your dashboard is updated with today's check-in. See you tomorrow!",
+      timestamp: Date.now(),
+    }]);
+  }, []);
+  
+  // Voice Bridge hook (only active in live mode)
+  const voiceBridge = useMirrorVoiceBridge({
+    onDataUpdate: handleVoiceDataUpdate,
+    onStatusChange: handleVoiceStatusChange,
+    onMessageReceived: handleVoiceMessageReceived,
+    onSessionEnd: handleVoiceSessionEnd,
+  });
 
   // Face capture state
   const [faceCapturePhase, setFaceCapturePhase] = useState<FaceCapturePhase>('hidden');
@@ -121,14 +225,21 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     introShownRef.current = true;
     
     setCameraReady(true);
-    // Start with intro message after a short delay
-    setTimeout(() => {
-      DEMO_SCRIPT.intro.forEach((msg, i) => {
-        setTimeout(() => addMessage(msg.speaker, msg.text), i * 500);
-      });
-      setStatus('listening');
-    }, 1000);
-  }, [addMessage]);
+    
+    if (voiceMode === 'live') {
+      // In live mode, connect to Vocal Bridge
+      setStatus('saving'); // Show connecting status
+      voiceBridge.connect();
+    } else {
+      // Demo mode - show scripted intro
+      setTimeout(() => {
+        DEMO_SCRIPT.intro.forEach((msg, i) => {
+          setTimeout(() => addMessage(msg.speaker, msg.text), i * 500);
+        });
+        setStatus('listening');
+      }, 1000);
+    }
+  }, [addMessage, voiceMode, voiceBridge]);
 
   // Track if we're currently processing a response to prevent double-clicks
   const processingRef = useRef(false);
@@ -270,8 +381,14 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
   const handleComplete = useCallback(() => {
     setPhase('complete');
     cleanupCameraStream(); // Clean up camera when leaving mirror
+    
+    // Disconnect from voice bridge if in live mode
+    if (voiceMode === 'live' && voiceBridge.isConnected) {
+      voiceBridge.disconnect();
+    }
+    
     onComplete(sessionData);
-  }, [sessionData, onComplete]);
+  }, [sessionData, onComplete, voiceMode, voiceBridge]);
 
   // Use session sleep if captured, otherwise show existing entry's sleep
   const displaySleepHours = sessionData.sleepHours ?? existingEntry?.sleepHours ?? null;
@@ -341,14 +458,99 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
         onSkip={handleSkipCapture}
       />
 
-      {/* Click to advance (demo mode) */}
-      {cameraReady && phase !== 'face-check' && phase !== 'summary' && phase !== 'complete' && (
+      {/* Mode toggle - hide during summary/complete phases */}
+      {cameraReady && phase !== 'summary' && phase !== 'complete' && !voiceBridge.sessionEnded && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (voiceMode === 'demo' && !voiceBridge.isConnecting) {
+                setVoiceMode('live');
+                setMessages([]);
+                fieldsUpdatedRef.current.clear();
+                introShownRef.current = false;
+                // Connect to voice bridge
+                voiceBridge.connect();
+              }
+            }}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              voiceMode === 'live'
+                ? 'bg-emerald-500 text-white shadow-lg'
+                : 'bg-white/10 text-white/70 hover:bg-white/20'
+            }`}
+          >
+            {voiceBridge.isConnecting ? 'Connecting...' : voiceBridge.isConnected ? '🎙️ Live' : 'Live Mode'}
+          </button>
+          <button
+            onClick={() => {
+              if (voiceMode === 'live') {
+                voiceBridge.disconnect();
+                setVoiceMode('demo');
+                setMessages([]);
+                introShownRef.current = false;
+              }
+            }}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              voiceMode === 'demo'
+                ? 'bg-violet-500 text-white shadow-lg'
+                : 'bg-white/10 text-white/70 hover:bg-white/20'
+            }`}
+          >
+            Demo Mode
+          </button>
+        </div>
+      )}
+
+      {/* Voice bridge error display */}
+      {voiceBridge.error && (
+        <div className="fixed bottom-36 left-1/2 -translate-x-1/2 z-30 px-4 py-2 bg-rose-500/90 text-white text-sm rounded-xl max-w-md text-center">
+          {voiceBridge.error}
+        </div>
+      )}
+
+      {/* Click to advance (demo mode only) */}
+      {cameraReady && voiceMode === 'demo' && phase !== 'face-check' && phase !== 'summary' && phase !== 'complete' && (
         <button
           onClick={handleSimulatedResponse}
           className="fixed bottom-8 left-1/2 -translate-x-1/2 z-30 px-8 py-4 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-2xl shadow-2xl transition-all hover:scale-105 active:scale-95"
         >
           {phase === 'intro' ? 'Start Check-in' : 'Next Response (Demo)'}
         </button>
+      )}
+
+      {/* Live mode - mic indicator and complete button */}
+      {cameraReady && voiceMode === 'live' && voiceBridge.isConnected && phase !== 'complete' && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-30 flex items-center gap-4">
+          {/* Mic toggle */}
+          <button
+            onClick={voiceBridge.toggleMic}
+            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-2xl ${
+              voiceBridge.isMicEnabled
+                ? 'bg-emerald-500 hover:bg-emerald-600'
+                : 'bg-rose-500 hover:bg-rose-600'
+            }`}
+          >
+            {voiceBridge.isMicEnabled ? (
+              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            ) : (
+              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+              </svg>
+            )}
+          </button>
+          
+          {/* Complete check-in button (shows when at least 2 fields logged) */}
+          {fieldsUpdatedRef.current.size >= 2 && (
+            <button
+              onClick={handleComplete}
+              className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-xl transition-all hover:scale-105"
+            >
+              Complete Check-in
+            </button>
+          )}
+        </div>
       )}
 
       {/* Summary complete button */}
@@ -369,18 +571,20 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
         <div
           className="px-6 py-3 rounded-2xl flex items-center gap-3"
           style={{
-            background: 'rgba(15, 23, 42, 0.7)',
-            backdropFilter: 'blur(12px)',
+            background: 'rgba(0, 0, 0, 0.35)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
           }}
         >
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg">
+            <svg className="w-5 h-5 text-white drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
           </div>
           <div>
-            <div className="text-white font-bold text-lg">Wellness Mirror</div>
-            <div className="text-white/60 text-xs">Powered by Nova</div>
+            <div className="text-white font-bold text-lg drop-shadow-lg">Wellness Mirror</div>
+            <div className="text-white/70 text-xs drop-shadow-md">Powered by Nova</div>
           </div>
         </div>
       </div>

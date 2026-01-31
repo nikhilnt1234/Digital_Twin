@@ -12,11 +12,14 @@ interface CameraFeedProps {
 
 // Store stream outside component to survive React Strict Mode remounts
 let globalStream: MediaStream | null = null;
+let isInitializing = false;
+let isPlaying = false;
 
 export const CameraFeed: React.FC<CameraFeedProps> = ({ onReady, onError }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isReady, setIsReady] = useState(false);
+  const hasCalledReady = useRef(false);
   
   // Store callbacks in refs
   const onReadyRef = useRef(onReady);
@@ -24,17 +27,58 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ onReady, onError }) => {
   onReadyRef.current = onReady;
   onErrorRef.current = onError;
 
-  const initCamera = useCallback(async () => {
+  // Safe play function that handles the promise properly
+  const safePlay = useCallback(async (video: HTMLVideoElement): Promise<boolean> => {
+    if (isPlaying) {
+      console.log('Play already in progress, skipping');
+      return false;
+    }
+    
+    isPlaying = true;
     try {
+      await video.play();
+      console.log('Video playing successfully');
+      return true;
+    } catch (err: any) {
+      // AbortError means play was interrupted - this is expected during remounts
+      if (err.name === 'AbortError') {
+        console.log('Play interrupted (AbortError) - this is normal during remount');
+        return false;
+      }
+      throw err;
+    } finally {
+      isPlaying = false;
+    }
+  }, []);
+
+  const initCamera = useCallback(async () => {
+    // Prevent concurrent initialization
+    if (isInitializing) {
+      console.log('Camera init already in progress, skipping');
+      return;
+    }
+    
+    // If already ready, don't re-init
+    if (isReady || hasCalledReady.current) {
+      console.log('Camera already ready');
+      return;
+    }
+
+    try {
+      isInitializing = true;
+      
       // If we already have a global stream, reuse it
       if (globalStream && globalStream.active) {
         console.log('Reusing existing camera stream');
-        if (videoRef.current) {
+        if (videoRef.current && videoRef.current.srcObject !== globalStream) {
           videoRef.current.srcObject = globalStream;
-          await videoRef.current.play();
-          setIsLoading(false);
-          setIsReady(true);
-          onReadyRef.current();
+          const success = await safePlay(videoRef.current);
+          if (success && !hasCalledReady.current) {
+            hasCalledReady.current = true;
+            setIsLoading(false);
+            setIsReady(true);
+            onReadyRef.current();
+          }
         }
         return;
       }
@@ -55,19 +99,27 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ onReady, onError }) => {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        console.log('Video playing');
-        setIsLoading(false);
-        setIsReady(true);
-        onReadyRef.current();
+        const success = await safePlay(videoRef.current);
+        if (success && !hasCalledReady.current) {
+          hasCalledReady.current = true;
+          console.log('Video ready, calling onReady');
+          setIsLoading(false);
+          setIsReady(true);
+          onReadyRef.current();
+        }
       }
     } catch (err: any) {
       console.error('Camera error:', err);
-      const message = err?.message || 'Camera access denied';
-      onErrorRef.current(message);
-      setIsLoading(false);
+      // Only show error for real errors, not AbortError
+      if (err.name !== 'AbortError') {
+        const message = err?.message || 'Camera access denied';
+        onErrorRef.current(message);
+        setIsLoading(false);
+      }
+    } finally {
+      isInitializing = false;
     }
-  }, []);
+  }, [isReady, safePlay]);
 
   useEffect(() => {
     initCamera();
@@ -76,18 +128,19 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ onReady, onError }) => {
     // Stream will be cleaned up when leaving the mirror entirely
   }, [initCamera]);
 
-  // Attach stream to video element when video ref is ready
-  useEffect(() => {
-    if (videoRef.current && globalStream && globalStream.active && !isReady) {
-      console.log('Attaching existing stream to video element');
-      videoRef.current.srcObject = globalStream;
-      videoRef.current.play().then(() => {
+  // Handle video element loadedmetadata event for autoplay
+  const handleLoadedMetadata = useCallback(async () => {
+    if (videoRef.current && globalStream && !hasCalledReady.current) {
+      console.log('Video metadata loaded, attempting play');
+      const success = await safePlay(videoRef.current);
+      if (success && !hasCalledReady.current) {
+        hasCalledReady.current = true;
         setIsLoading(false);
         setIsReady(true);
         onReadyRef.current();
-      }).catch(console.error);
+      }
     }
-  }, [isReady]);
+  }, [safePlay]);
 
   return (
     <>
@@ -105,9 +158,9 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ onReady, onError }) => {
       {/* Video feed - mirrored */}
       <video
         ref={videoRef}
-        autoPlay
         playsInline
         muted
+        onLoadedMetadata={handleLoadedMetadata}
         className={`fixed inset-0 w-full h-full object-cover z-0 transition-opacity duration-500 ${
           isLoading ? 'opacity-0' : 'opacity-100'
         }`}
@@ -134,6 +187,9 @@ export const cleanupCameraStream = () => {
     globalStream.getTracks().forEach(track => track.stop());
     globalStream = null;
   }
+  // Reset flags so next session starts fresh
+  isInitializing = false;
+  isPlaying = false;
 };
 
 export default CameraFeed;
