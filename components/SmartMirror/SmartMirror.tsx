@@ -206,7 +206,7 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     setTimeout(() => {
       console.log('[SmartMirror] Auto-transitioning to dashboard');
       handleCompleteRef.current();
-    }, 1000);
+    }, 3000);
   }, []);
   
   // Voice Bridge hook (only active in live mode)
