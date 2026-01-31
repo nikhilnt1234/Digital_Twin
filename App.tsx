@@ -18,6 +18,7 @@ import { DailyTrackingGraphs } from './components/DailyTrackingGraphs';
 
 // Voice Coach
 import { VoiceCoachPanel } from './components/VoiceCoachPanel';
+import { NovaVoicePanel } from './components/NovaVoicePanel';
 import { ChartTarget } from './voice/actionSchema';
 
 const DEFAULT_INPUTS: UserInputs = {
@@ -156,6 +157,7 @@ const App: React.FC = () => {
 
   // Voice Coach State
   const [voiceCoachOpen, setVoiceCoachOpen] = useState(false);
+  const [novaPanelOpen, setNovaPanelOpen] = useState(false);
   const [highlightedChart, setHighlightedChart] = useState<ChartTarget | null>(null);
   const [insightToast, setInsightToast] = useState<string | null>(null);
 
@@ -204,19 +206,19 @@ const App: React.FC = () => {
       setChatOpen(true);
   };
 
-  // Handle daily entry updates
-  const handleUpdateDailyEntry = useCallback((entry: DailyEntry) => {
+  // Handle daily entry updates. Supports functional form so Nova can merge with latest (avoids nullifying prior values).
+  const handleUpdateDailyEntry = useCallback((entryOrUpdater: DailyEntry | ((prev: DailyEntry | null) => DailyEntry)) => {
     setDailyEntries(prev => {
+      const todayStr = getTodayString();
+      const current = prev.find(e => e.date === todayStr) ?? null;
+      const entry = typeof entryOrUpdater === 'function' ? entryOrUpdater(current) : entryOrUpdater;
       const existingIndex = prev.findIndex(e => e.date === entry.date);
       if (existingIndex >= 0) {
-        // Update existing entry
         const updated = [...prev];
         updated[existingIndex] = entry;
         return updated;
-      } else {
-        // Add new entry
-        return [...prev, entry];
       }
+      return [...prev, entry];
     });
   }, []);
 
@@ -361,6 +363,16 @@ const App: React.FC = () => {
                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                      </svg>
                      <span className="hidden sm:inline">Voice Coach</span>
+                 </button>
+                 {/* Nova (Vocal Bridge) Check-in */}
+                 <button 
+                    onClick={() => setNovaPanelOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white text-xs font-semibold rounded-lg hover:bg-violet-700 transition-all shadow-md hover:shadow-lg active:scale-95"
+                 >
+                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                     </svg>
+                     <span className="hidden sm:inline">Nova Check-in</span>
                  </button>
                  <button onClick={() => setAppState('input')} className="hidden sm:block text-xs font-semibold text-slate-500 hover:text-blue-600">
                      Parameters
@@ -598,6 +610,14 @@ const App: React.FC = () => {
         setActiveTab={setActiveTab}
         onHighlightChart={handleHighlightChart}
         onShowInsight={handleShowInsight}
+      />
+
+      {/* Nova (Vocal Bridge) Panel – receives daily log JSON and pushes to localStorage */}
+      <NovaVoicePanel
+        isOpen={novaPanelOpen}
+        onClose={() => setNovaPanelOpen(false)}
+        todayEntry={todayEntry}
+        onUpdateEntry={handleUpdateDailyEntry}
       />
 
       {/* Insight Toast */}
