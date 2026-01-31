@@ -21,6 +21,9 @@ import { VoiceCoachPanel } from './components/VoiceCoachPanel';
 import { NovaVoicePanel } from './components/NovaVoicePanel';
 import { ChartTarget } from './voice/actionSchema';
 
+// Smart Mirror
+import { SmartMirror } from './components/SmartMirror';
+
 const DEFAULT_INPUTS: UserInputs = {
   twinType: TwinType.LifeTwin,
   persona: 'custom',
@@ -83,7 +86,21 @@ const getYesterdayString = () => {
   return d.toISOString().split('T')[0];
 };
 
+// Check for mirror mode from URL
+const getInitialMode = (): 'mirror' | 'app' => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'mirror') {
+      return 'mirror';
+    }
+  }
+  return 'app';
+};
+
 const App: React.FC = () => {
+  // Mirror mode state
+  const [appMode, setAppMode] = useState<'mirror' | 'app'>(getInitialMode);
+
   // Initialize state from LocalStorage to persist data across refreshes
   const [appState, setAppState] = useState<'onboarding' | 'input' | 'dashboard'>(() => {
     // Allow forcing a reset via URL param (useful for sharing demos: ?reset=true)
@@ -95,6 +112,10 @@ const App: React.FC = () => {
             localStorage.removeItem(STORAGE_KEY_DAILY_ENTRIES);
             window.history.replaceState(null, '', window.location.pathname);
             return 'onboarding';
+        }
+        // If coming from mirror completion, go straight to dashboard
+        if (params.get('fromMirror') === 'true') {
+            return 'dashboard';
         }
     }
 
@@ -258,6 +279,65 @@ const App: React.FC = () => {
     }
   };
 
+  // Handle mirror session completion
+  const handleMirrorComplete = useCallback((data: {
+    sleepHours: number | null;
+    movementMinutes: number | null;
+    carbSugarFlag: boolean | null;
+    carbSugarItem: string | null;
+    diningOutSpend: number | null;
+    faceCheckImage: string | null;
+  }) => {
+    const today = getTodayString();
+    
+    // Update daily entry with mirror data
+    handleUpdateDailyEntry((prev) => {
+      const base = prev ?? {
+        id: `entry_${today}_${Date.now()}`,
+        date: today,
+        weightKg: null,
+        sleepHours: null,
+        sleepQuality: null,
+        mealsCount: null,
+        mealsCost: null,
+        carbsGrams: null,
+        caloriesTotal: null,
+        exerciseMinutes: null,
+        exerciseType: null,
+        stepsCount: null,
+        fastingGlucose: null,
+        postMealGlucose: null,
+        notes: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      return {
+        ...base,
+        sleepHours: data.sleepHours ?? base.sleepHours,
+        exerciseMinutes: data.movementMinutes ?? base.exerciseMinutes,
+        carbSugarFlag: data.carbSugarFlag,
+        carbSugarItem: data.carbSugarItem,
+        diningOutSpend: data.diningOutSpend,
+        mealsCost: data.diningOutSpend ?? base.mealsCost, // Also update mealsCost
+        faceCheckImage: data.faceCheckImage,
+        notes: base.notes + (base.notes ? '\n' : '') + `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    // Set prediabetic persona
+    setInputs(prev => ({ ...prev, persona: 'prediabetic' }));
+    
+    // Switch to app mode and navigate to dashboard
+    setAppMode('app');
+    setAppState('dashboard');
+    setActiveTab('health');
+    
+    // Update URL
+    window.history.replaceState(null, '', '/?fromMirror=true');
+  }, [handleUpdateDailyEntry]);
+
   // Voice Coach Handlers
   const handleHighlightChart = useCallback((target: ChartTarget | null) => {
     setHighlightedChart(target);
@@ -286,6 +366,16 @@ const App: React.FC = () => {
     // Auto-dismiss after 5 seconds
     setTimeout(() => setInsightToast(null), 5000);
   }, []);
+
+  // Render Smart Mirror if in mirror mode
+  if (appMode === 'mirror') {
+    return (
+      <SmartMirror
+        onComplete={handleMirrorComplete}
+        existingEntry={todayEntry}
+      />
+    );
+  }
 
   if (appState === 'onboarding') {
     return <Onboarding onComplete={handleOnboardingComplete} />;

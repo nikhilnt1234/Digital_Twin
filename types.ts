@@ -90,6 +90,12 @@ export interface DailyEntry {
   fastingGlucose: number | null; // mg/dL
   postMealGlucose: number | null; // mg/dL
   
+  // Mirror-specific fields (Smart Mirror check-in)
+  carbSugarFlag?: boolean | null;      // Did user have sugary/high-carb item?
+  carbSugarItem?: string | null;       // Description of the item
+  diningOutSpend?: number | null;      // Amount spent dining out
+  faceCheckImage?: string | null;      // Base64 image from face check
+  
   // Metadata
   notes: string;
   createdAt: string;
