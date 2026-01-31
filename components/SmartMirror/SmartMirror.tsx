@@ -184,6 +184,9 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     }
   }, [phase]);
   
+  // Ref to store handleComplete for use in session end callback
+  const handleCompleteRef = useRef<() => void>(() => {});
+  
   // Handle voice session end (agent disconnects)
   const handleVoiceSessionEnd = useCallback(() => {
     console.log('[SmartMirror] Voice session ended');
@@ -195,9 +198,15 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     setMessages(prev => [...prev, {
       id,
       speaker: 'nova',
-      text: "All set! Your dashboard is updated with today's check-in. See you tomorrow!",
+      text: "All set! Transitioning to your dashboard...",
       timestamp: Date.now(),
     }]);
+    
+    // Auto-transition to dashboard after brief delay
+    setTimeout(() => {
+      console.log('[SmartMirror] Auto-transitioning to dashboard');
+      handleCompleteRef.current();
+    }, 2000);
   }, []);
   
   // Voice Bridge hook (only active in live mode)
@@ -389,6 +398,9 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     
     onComplete(sessionData);
   }, [sessionData, onComplete, voiceMode, voiceBridge]);
+  
+  // Keep ref updated for async callbacks
+  handleCompleteRef.current = handleComplete;
 
   // Use session sleep if captured, otherwise show existing entry's sleep
   const displaySleepHours = sessionData.sleepHours ?? existingEntry?.sleepHours ?? null;
@@ -553,8 +565,14 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
         </div>
       )}
 
-      {/* Summary complete button */}
-      {phase === 'summary' && (
+      {/* Summary - auto-transition indicator for live mode, button for demo mode */}
+      {phase === 'summary' && voiceMode === 'live' && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-30 px-8 py-4 bg-emerald-600/90 text-white font-semibold rounded-2xl shadow-2xl flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          <span>Opening BodyTwin Dashboard...</span>
+        </div>
+      )}
+      {phase === 'summary' && voiceMode === 'demo' && (
         <button
           onClick={handleComplete}
           className="fixed bottom-8 left-1/2 -translate-x-1/2 z-30 px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-2xl shadow-2xl transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
