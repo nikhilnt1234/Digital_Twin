@@ -215,16 +215,27 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
   // Ref for voiceBridge access in callbacks (will be set after hook)
   const voiceBridgeRef = useRef<ReturnType<typeof useMirrorVoiceBridge> | null>(null);
   
+  // Ref for handleCapture to enable auto-capture
+  const handleCaptureRef = useRef<(() => void) | null>(null);
+  
   // Handle face capture request from voice agent
   const handleFaceCaptureRequested = useCallback((request: FaceCaptureRequest) => {
     console.log('[SmartMirror] Face capture requested:', request);
     faceCaptureReasonRef.current = request;
     
-    // Switch to face-check phase and show the frame
+    // Switch to face-check phase and show the frame briefly, then auto-capture
     setPhase('face-check');
     setFaceCapturePhase('frame');
-    setStatus('idle');
-  }, []);
+    setStatus('capturing');
+    
+    // In live mode, auto-start capture after a brief moment to let user see the frame
+    if (voiceMode === 'live') {
+      setTimeout(() => {
+        // Trigger the capture automatically
+        handleCaptureRef.current?.();
+      }, 1500);
+    }
+  }, [voiceMode]);
   
   // Voice Bridge hook (only active in live mode)
   const voiceBridge = useMirrorVoiceBridge({
@@ -397,12 +408,13 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
             reason: faceCaptureReasonRef.current?.reason ?? 'routine',
           });
           
-          // Hide capture overlay after brief display, let agent handle next steps
+          // Hide capture overlay after brief display
+          // Agent will give summary/coaching then end call, triggering onSessionEnd
           setTimeout(() => {
             setFaceCapturePhase('hidden');
-            setPhase('questions'); // Return to questions phase, agent will end session
-            setStatus('listening');
-          }, 2000);
+            setStatus('complete');
+            // Don't change phase - onSessionEnd will handle transition
+          }, 2500);
         } else {
           // Demo mode - use scripted flow
           addMessage('nova', DEMO_SCRIPT.faceCheckDone);
@@ -418,6 +430,9 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
       }
     }, 1000);
   }, [addMessage, voiceMode]);
+  
+  // Keep capture ref updated for auto-capture
+  handleCaptureRef.current = handleCapture;
 
   // Skip face capture
   const handleSkipCapture = useCallback(() => {

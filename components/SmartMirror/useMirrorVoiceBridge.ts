@@ -139,24 +139,55 @@ export function useMirrorVoiceBridge(options: UseMirrorVoiceBridgeOptions) {
         const text = new TextDecoder().decode(payload);
         const data = JSON.parse(text);
         
-        console.log('[MirrorVoiceBridge] Data received:', data);
+        console.log('[MirrorVoiceBridge] Raw data received:', JSON.stringify(data, null, 2));
         
-        // Check if it's a client_action (Nova sends these)
+        // Handle multiple data formats from Vocal Bridge
+        let action: string | null = null;
+        let actionPayload: Record<string, unknown> = {};
+        
+        // Format 1: { type: 'client_action', action: '...', payload: {...} }
         if (data.type === 'client_action') {
-          const action = data.action as string;
-          const actionPayload = (data.payload ?? {}) as Record<string, unknown>;
-          
+          action = data.action as string;
+          actionPayload = (data.payload ?? {}) as Record<string, unknown>;
+        }
+        // Format 2: { action: '...', ... } (action at top level, rest is payload)
+        else if (data.action && typeof data.action === 'string') {
+          action = data.action;
+          const { action: _, ...rest } = data;
+          actionPayload = rest;
+        }
+        // Format 3: Direct data fields (sleepHours, exerciseMinutes, etc.)
+        else if ('sleepHours' in data || 'sleep_hours' in data) {
+          action = 'log_sleep_hours';
+          actionPayload = data;
+        }
+        else if ('exerciseMinutes' in data || 'exercise_minutes' in data) {
+          action = 'log_exercise_minutes';
+          actionPayload = data;
+        }
+        else if ('mealsCost' in data || 'meals_cost' in data) {
+          action = 'log_meals_cost';
+          actionPayload = data;
+        }
+        else if ('carbsBool' in data || 'carbs_bool' in data) {
+          action = 'log_carb';
+          actionPayload = data;
+        }
+        
+        if (action) {
           console.log('[MirrorVoiceBridge] Processing action:', action, actionPayload);
           
           // Parse and dispatch the action
           switch (action) {
             case 'log_sleep_hours': {
               const sleepHours = parseNumber(actionPayload.sleepHours ?? actionPayload.sleep_hours);
+              console.log('[MirrorVoiceBridge] Sleep hours:', sleepHours);
               onDataUpdateRef.current('sleepHours', sleepHours);
               break;
             }
             case 'log_exercise_minutes': {
               const exerciseMinutes = parseNumber(actionPayload.exerciseMinutes ?? actionPayload.exercise_minutes);
+              console.log('[MirrorVoiceBridge] Exercise minutes:', exerciseMinutes);
               onDataUpdateRef.current('exerciseMinutes', exerciseMinutes);
               break;
             }
@@ -164,16 +195,19 @@ export function useMirrorVoiceBridge(options: UseMirrorVoiceBridgeOptions) {
               // This action can carry either carbsBool or mealsCost
               if ('carbsBool' in actionPayload || 'carbs_bool' in actionPayload) {
                 const carbsBool = (actionPayload.carbsBool ?? actionPayload.carbs_bool) === true;
+                console.log('[MirrorVoiceBridge] Carbs bool:', carbsBool);
                 onDataUpdateRef.current('carbsBool', carbsBool);
               }
               if ('mealsCost' in actionPayload || 'meals_cost' in actionPayload) {
                 const mealsCost = parseNumber(actionPayload.mealsCost ?? actionPayload.meals_cost);
+                console.log('[MirrorVoiceBridge] Meals cost:', mealsCost);
                 onDataUpdateRef.current('mealsCost', mealsCost);
               }
               break;
             }
             case 'log_carb': {
               const carbsBool = (actionPayload.carbsBool ?? actionPayload.carbs_bool ?? actionPayload.value) === true;
+              console.log('[MirrorVoiceBridge] Carbs bool (log_carb):', carbsBool);
               onDataUpdateRef.current('carbsBool', carbsBool);
               break;
             }
@@ -188,7 +222,7 @@ export function useMirrorVoiceBridge(options: UseMirrorVoiceBridgeOptions) {
           
           // Generate a message for the conversation rail
           const messageText = generateActionMessage(action, actionPayload);
-          if (onMessageReceivedRef.current) {
+          if (onMessageReceivedRef.current && messageText !== 'Data logged.') {
             onMessageReceivedRef.current({
               id: `nova-${++messageIdRef.current}`,
               speaker: 'nova',
@@ -196,6 +230,8 @@ export function useMirrorVoiceBridge(options: UseMirrorVoiceBridgeOptions) {
               timestamp: Date.now(),
             });
           }
+        } else {
+          console.log('[MirrorVoiceBridge] Unknown data format, not processing');
         }
       } catch (e) {
         console.warn('[MirrorVoiceBridge] Failed to parse data:', e);

@@ -67,15 +67,19 @@ Immediately emit structured data for this field.
 
 ## Visual Check-in (NEW - After All Questions)
 
-After all data questions are complete, initiate a camera-based face check-in:
+After all four data questions are complete (sleep, movement, carbs, spending), initiate a camera-based face check-in:
 
-1. Reference any previous visual notes (e.g., "Let's check on that small cut from yesterday.")
-2. Trigger the face capture action by calling trigger_client_action with action name "trigger_face_capture"
-3. Instruct the user: "Look at the mirror and hold still for a moment."
-4. Wait for the app to confirm capture (the app will send back a "face_capture_complete" action)
-5. Once confirmed, acknowledge: "Photo captured and saved."
+1. Say: "Before we wrap up, let's check on that small cut from yesterday."
+2. IMMEDIATELY trigger the face capture by calling trigger_client_action with:
+   - action name: "trigger_face_capture"  
+   - payload: { "reason": "follow_up", "note": "razor cut from yesterday" }
+3. Say: "Look at the mirror and hold still..."
+4. The app will automatically capture and send back "face_capture_complete"
+5. Once you receive the confirmation, acknowledge: "Photo captured and saved."
+6. Then give the summary and two quick wins
+7. End with: "All set! See you tomorrow." and end the call
 
-If this is a routine check with no previous visual note, simply say: "Quick visual check-in — look at the mirror and hold still."
+IMPORTANT: You must call trigger_client_action to emit the trigger_face_capture action. The app is listening for this specific action to trigger the camera.
 
 ## Incremental Structured Data Emission
 
