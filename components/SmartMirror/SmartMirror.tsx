@@ -10,7 +10,7 @@ import { MetricsPanel } from './MetricsPanel';
 import { ConversationRail, ConversationMessage } from './ConversationRail';
 import { FaceCapture } from './FaceCapture';
 import { StatusType } from './MirrorStatusChip';
-import { useMirrorVoiceBridge, MirrorVoiceData } from './useMirrorVoiceBridge';
+import { useMirrorVoiceBridge, MirrorVoiceData, FaceCaptureRequest } from './useMirrorVoiceBridge';
 import type { DailyEntry } from '../../types';
 
 // Session phases
@@ -209,13 +209,34 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     }, 3000);
   }, []);
   
+  // Track face capture request reason for context
+  const faceCaptureReasonRef = useRef<FaceCaptureRequest | null>(null);
+  
+  // Ref for voiceBridge access in callbacks (will be set after hook)
+  const voiceBridgeRef = useRef<ReturnType<typeof useMirrorVoiceBridge> | null>(null);
+  
+  // Handle face capture request from voice agent
+  const handleFaceCaptureRequested = useCallback((request: FaceCaptureRequest) => {
+    console.log('[SmartMirror] Face capture requested:', request);
+    faceCaptureReasonRef.current = request;
+    
+    // Switch to face-check phase and show the frame
+    setPhase('face-check');
+    setFaceCapturePhase('frame');
+    setStatus('idle');
+  }, []);
+  
   // Voice Bridge hook (only active in live mode)
   const voiceBridge = useMirrorVoiceBridge({
     onDataUpdate: handleVoiceDataUpdate,
     onStatusChange: handleVoiceStatusChange,
     onMessageReceived: handleVoiceMessageReceived,
     onSessionEnd: handleVoiceSessionEnd,
+    onFaceCaptureRequested: handleFaceCaptureRequested,
   });
+  
+  // Keep voiceBridge ref updated for use in callbacks
+  voiceBridgeRef.current = voiceBridge;
 
   // Face capture state
   const [faceCapturePhase, setFaceCapturePhase] = useState<FaceCapturePhase>('hidden');
@@ -333,7 +354,7 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     }
   }, [phase, currentQuestionIndex, addMessage]);
 
-  // Face capture
+  // Face capture handler
   const handleCapture = useCallback(() => {
     setFaceCapturePhase('countdown');
     setStatus('capturing');
@@ -365,18 +386,38 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
         setFaceCapturePhase('captured');
         setStatus('updated');
         setUpdatedField('Photo');
-        addMessage('nova', DEMO_SCRIPT.faceCheckDone);
 
-        // Move to summary after delay
-        setTimeout(() => {
-          setFaceCapturePhase('hidden');
-          setPhase('summary');
-          addMessage('nova', DEMO_SCRIPT.summary);
-          setStatus('idle');
-        }, 3000);
+        // In live mode, send confirmation back to agent and add message
+        if (voiceMode === 'live') {
+          addMessage('nova', 'Photo captured and saved to your check-in.');
+          
+          // Send confirmation to voice agent
+          voiceBridgeRef.current?.sendActionToAgent('face_capture_complete', {
+            success: true,
+            reason: faceCaptureReasonRef.current?.reason ?? 'routine',
+          });
+          
+          // Hide capture overlay after brief display, let agent handle next steps
+          setTimeout(() => {
+            setFaceCapturePhase('hidden');
+            setPhase('questions'); // Return to questions phase, agent will end session
+            setStatus('listening');
+          }, 2000);
+        } else {
+          // Demo mode - use scripted flow
+          addMessage('nova', DEMO_SCRIPT.faceCheckDone);
+
+          // Move to summary after delay
+          setTimeout(() => {
+            setFaceCapturePhase('hidden');
+            setPhase('summary');
+            addMessage('nova', DEMO_SCRIPT.summary);
+            setStatus('idle');
+          }, 3000);
+        }
       }
     }, 1000);
-  }, [addMessage]);
+  }, [addMessage, voiceMode]);
 
   // Skip face capture
   const handleSkipCapture = useCallback(() => {

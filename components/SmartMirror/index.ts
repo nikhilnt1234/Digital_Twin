@@ -8,4 +8,4 @@ export { MirrorStatusChip } from './MirrorStatusChip';
 export { useMirrorVoiceBridge } from './useMirrorVoiceBridge';
 export type { StatusType } from './MirrorStatusChip';
 export type { ConversationMessage } from './ConversationRail';
-export type { MirrorVoiceData, NovaClientAction } from './useMirrorVoiceBridge';
+export type { MirrorVoiceData, NovaClientAction, FaceCaptureRequest } from './useMirrorVoiceBridge';

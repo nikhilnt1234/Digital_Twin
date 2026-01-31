@@ -29,12 +29,20 @@ export interface ConversationMessage {
   timestamp: number;  // Unix timestamp in ms to match ConversationRail
 }
 
+// Face capture request from Nova
+export interface FaceCaptureRequest {
+  reason: 'follow_up' | 'routine';
+  note?: string | null;
+}
+
 export interface UseMirrorVoiceBridgeOptions {
   onDataUpdate: (field: keyof MirrorVoiceData, value: number | boolean | null) => void;
   onStatusChange?: (status: 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'error') => void;
   onMessageReceived?: (message: ConversationMessage) => void;
   /** Called when the voice session ends (agent disconnects or call ends) */
   onSessionEnd?: () => void;
+  /** Called when Nova requests a face capture */
+  onFaceCaptureRequested?: (request: FaceCaptureRequest) => void;
 }
 
 // Helper to parse numbers from various formats
@@ -82,23 +90,32 @@ function generateActionMessage(action: string, payload: Record<string, unknown>)
       const carbs = payload.carbsBool ?? payload.carbs_bool ?? payload.value;
       return carbs ? 'Carb/sugar flag noted.' : 'No carb flags — nice!';
     }
+    case 'trigger_face_capture': {
+      const reason = payload.reason;
+      if (reason === 'follow_up') {
+        return "Let's check on that cut from yesterday. Look at the mirror and hold still...";
+      }
+      return 'Quick visual check-in. Look at the mirror and hold still...';
+    }
     default:
       return 'Data logged.';
   }
 }
 
 export function useMirrorVoiceBridge(options: UseMirrorVoiceBridgeOptions) {
-  const { onDataUpdate, onStatusChange, onMessageReceived, onSessionEnd } = options;
+  const { onDataUpdate, onStatusChange, onMessageReceived, onSessionEnd, onFaceCaptureRequested } = options;
   
   // Refs to avoid stale closures (same pattern as working hook)
   const onDataUpdateRef = useRef(onDataUpdate);
   const onStatusChangeRef = useRef(onStatusChange);
   const onMessageReceivedRef = useRef(onMessageReceived);
   const onSessionEndRef = useRef(onSessionEnd);
+  const onFaceCaptureRequestedRef = useRef(onFaceCaptureRequested);
   onDataUpdateRef.current = onDataUpdate;
   onStatusChangeRef.current = onStatusChange;
   onMessageReceivedRef.current = onMessageReceived;
   onSessionEndRef.current = onSessionEnd;
+  onFaceCaptureRequestedRef.current = onFaceCaptureRequested;
   
   // Track if we've had a successful connection (to distinguish end from error)
   const hadConnectionRef = useRef(false);
@@ -158,6 +175,13 @@ export function useMirrorVoiceBridge(options: UseMirrorVoiceBridgeOptions) {
             case 'log_carb': {
               const carbsBool = (actionPayload.carbsBool ?? actionPayload.carbs_bool ?? actionPayload.value) === true;
               onDataUpdateRef.current('carbsBool', carbsBool);
+              break;
+            }
+            case 'trigger_face_capture': {
+              const reason = (actionPayload.reason ?? 'routine') as 'follow_up' | 'routine';
+              const note = (actionPayload.note ?? null) as string | null;
+              console.log('[MirrorVoiceBridge] Face capture requested:', { reason, note });
+              onFaceCaptureRequestedRef.current?.({ reason, note });
               break;
             }
           }
