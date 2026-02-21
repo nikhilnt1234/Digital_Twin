@@ -10,9 +10,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  defs,
-  linearGradient,
-  stop
 } from 'recharts';
 import { SimulationResult } from '../types';
 import { ChartTarget } from '../voice/actionSchema';
@@ -179,8 +176,8 @@ const InteractiveChart: React.FC<InteractiveChartProps> = ({ title, iconColor, d
             <defs>
               {config.map(c => (
                  <linearGradient key={c.key} id={`grad-${c.key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={c.color} stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor={c.color} stopOpacity={0}/>
+                    <stop offset="5%" stopColor={c.color} stopOpacity={0.2} />
+                    <stop offset="95%" stopColor={c.color} stopOpacity={0} />
                  </linearGradient>
               ))}
             </defs>

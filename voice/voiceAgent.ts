@@ -1,9 +1,9 @@
 /**
  * Voice Agent - Interprets voice commands using Gemini
- * Returns structured actions that the UI can execute
+ * Returns structured actions that the UI can execute.
+ * All AI calls go through /api/coach/chat (no client-side API keys).
  */
 
-import { GoogleGenAI } from "@google/genai";
 import { DashboardTab, UserInputs, SimulationResult } from "../types";
 import { VoiceAction, VoiceAgentResponse, validateActions } from "./actionSchema";
 
@@ -213,135 +213,33 @@ export async function interpretCommand(params: {
   appContext: VoiceContext;
 }): Promise<VoiceAgentResponse> {
   const { transcript, appContext } = params;
-
-  // Check for API key
-  if (!process.env.API_KEY) {
-    console.error("Voice Agent: No API_KEY found in environment");
-    // Provide a helpful local response for common queries when API is unavailable
-    return handleOfflineQuery(transcript, appContext);
-  }
-
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const contextStr = JSON.stringify(appContext, null, 2);
-    
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: `APP CONTEXT:
+  const contextStr = JSON.stringify(appContext, null, 2);
+  const userContent = `APP CONTEXT:
 ${contextStr}
 
 USER COMMAND:
-"${transcript}"`,
-      config: {
-        systemInstruction: VOICE_SYSTEM_PROMPT,
-        temperature: 0.1, // Low temperature for consistent JSON output
-      },
-    });
+"${transcript}"`;
 
-    const rawText = response.text || '';
-    
-    // Parse the response
-    return parseGeminiResponse(rawText);
-  } catch (error) {
-    console.error("Voice Agent Error:", error);
-    
-    // Check for specific error types
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    
-    if (errorMessage.includes('API key') || errorMessage.includes('401') || errorMessage.includes('403')) {
-      return {
-        speechText: "The Gemini API key appears to be invalid or missing. Please check your API key configuration.",
-        actions: [],
-      };
-    }
-    
-    if (errorMessage.includes('network') || errorMessage.includes('fetch') || errorMessage.includes('ENOTFOUND')) {
-      return {
-        speechText: "I couldn't connect to the AI service. Please check your internet connection.",
-        actions: [],
-      };
-    }
-    
-    // Fallback to offline handling
-    return handleOfflineQuery(transcript, appContext);
-  }
-}
+  const response = await fetch("/api/coach/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: [{ role: "user", content: userContent }],
+      systemInstruction: VOICE_SYSTEM_PROMPT,
+      model: "gemini-2.0-flash",
+      temperature: 0.1,
+    }),
+  });
 
-// Handle queries when API is unavailable - provides basic functionality
-function handleOfflineQuery(transcript: string, context: VoiceContext): VoiceAgentResponse {
-  const lower = transcript.toLowerCase();
-  
-  // Navigation commands
-  if (lower.includes('open') || lower.includes('go to') || lower.includes('show')) {
-    if (lower.includes('money') || lower.includes('finance') || lower.includes('wealth')) {
-      return {
-        speechText: "Opening MoneyTwin tab.",
-        actions: [{ type: 'NAVIGATE_TAB', payload: { tab: 'money' } }],
-      };
-    }
-    if (lower.includes('health') || lower.includes('body')) {
-      return {
-        speechText: "Opening BodyTwin tab.",
-        actions: [{ type: 'NAVIGATE_TAB', payload: { tab: 'health' } }],
-      };
-    }
-    if (lower.includes('overview') || lower.includes('home')) {
-      return {
-        speechText: "Opening Overview tab.",
-        actions: [{ type: 'NAVIGATE_TAB', payload: { tab: 'overview' } }],
-      };
-    }
-    if (lower.includes('connection')) {
-      return {
-        speechText: "Opening Connections tab.",
-        actions: [{ type: 'NAVIGATE_TAB', payload: { tab: 'connections' } }],
-      };
-    }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const detail = data?.detail || `HTTP ${response.status}`;
+    throw new Error(detail);
   }
-  
-  // Status/info queries - provide data from context
-  if (lower.includes('saving') || lower.includes('money') || lower.includes('finance') || lower.includes('wealth')) {
-    const savings = context.inputs.finance.currentSavings;
-    const income = context.inputs.finance.monthlyIncome;
-    const debt = context.inputs.finance.totalDebt;
-    const score = context.simulationSummary?.moneyScore ?? 'unknown';
-    
-    return {
-      speechText: `Here's your financial snapshot: You have $${savings.toLocaleString()} in savings, monthly income of $${income.toLocaleString()}, and $${debt.toLocaleString()} in debt. Your money score is ${score}.`,
-      actions: [{ type: 'NAVIGATE_TAB', payload: { tab: 'money' } }],
-    };
-  }
-  
-  if (lower.includes('health') || lower.includes('body') || lower.includes('weight') || lower.includes('status')) {
-    const weight = context.inputs.health.weightKg;
-    const steps = context.inputs.health.stepsPerDay;
-    const sleep = context.inputs.health.averageSleep;
-    const workouts = context.inputs.health.workoutsPerWeek;
-    const score = context.simulationSummary?.bodyScore ?? 'unknown';
-    
-    return {
-      speechText: `Here's your health snapshot: You weigh ${weight}kg, averaging ${steps.toLocaleString()} steps per day, ${sleep} hours of sleep, and ${workouts} workouts per week. Your body score is ${score}.`,
-      actions: [{ type: 'NAVIGATE_TAB', payload: { tab: 'health' } }],
-    };
-  }
-  
-  if (lower.includes('score') || lower.includes('overall')) {
-    const body = context.simulationSummary?.bodyScore ?? 'N/A';
-    const money = context.simulationSummary?.moneyScore ?? 'N/A';
-    const life = context.simulationSummary?.lifeScore ?? 'N/A';
-    
-    return {
-      speechText: `Your current scores are: Body score ${body}, Money score ${money}, and overall Life score ${life}.`,
-      actions: [],
-    };
-  }
-  
-  // Default response when API unavailable
-  return {
-    speechText: "I'm running in offline mode without the Gemini API. I can help with basic navigation like 'open MoneyTwin' or show your current stats. For full conversational features, please configure your API key in the .env.local file.",
-    actions: [],
-  };
+
+  const data = await response.json();
+  const rawText = data?.text ?? "";
+  return parseGeminiResponse(rawText);
 }
 
 // ============================================

@@ -20,6 +20,10 @@ const createEmptyEntry = (): DailyEntry => {
     mealsCount: null,
     mealsCost: null,
     carbsGrams: null,
+    proteinGrams: null,
+    fiberGrams: null,
+    sugarFlag: null,
+    mealsDescription: null,
     caloriesTotal: null,
     exerciseMinutes: null,
     exerciseType: null,
@@ -32,11 +36,8 @@ const createEmptyEntry = (): DailyEntry => {
   };
 };
 
-// Extended entry with meal macros
-interface ExtendedDailyEntry extends DailyEntry {
-  fiberGrams?: number | null;
-  proteinGrams?: number | null;
-}
+// Extended entry for backwards compatibility
+type ExtendedDailyEntry = DailyEntry;
 
 // Get last 7 days of entries for mini charts
 const getLast7Days = (entries: DailyEntry[]): (DailyEntry | null)[] => {

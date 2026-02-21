@@ -19,6 +19,72 @@ export interface Persona {
 }
 
 // ==========================================
+// MEDGEMMA CLINICAL ANALYSIS TYPES
+// ==========================================
+
+/**
+ * MedGemma analysis response schema.
+ * Produced by the local MedGemma inference service.
+ */
+export interface MedGemmaAnalysis {
+  patient_summary: {
+    one_liner: string;
+    key_changes_since_yesterday: string[];
+    symptoms_reported: string[];
+    med_adherence: string;
+    vitals: {
+      bp: string;
+      hr: string;
+      spo2: string;
+      temp: string;
+      weight: string;
+    };
+  };
+  triage: {
+    risk_level: 'green' | 'yellow' | 'red';
+    red_flags: string[];
+    recommended_next_steps: string[];
+    when_to_seek_urgent_care: string[];
+  };
+  caregiver_message: {
+    sms_ready_text: string;
+    questions_to_ask_patient_today: string[];
+  };
+  clinician_note_draft: {
+    subjective: string;
+    objective: string;
+    assessment: string;
+    plan: string;
+  };
+  model_meta: {
+    model: string;
+    prompt_version: string;
+    limitations: string[];
+  };
+}
+
+/**
+ * Request payload for MedGemma analysis endpoint.
+ */
+export interface MedGemmaRequest {
+  checkin_id: string;
+  transcript: string;
+  vitals: {
+    bp: string;
+    hr: string;
+    spo2: string;
+    temp: string;
+    weight: string;
+  };
+  yesterday_summary: string | null;
+  patient_profile: {
+    age: number;
+    conditions: string[];
+  } | null;
+  retrieved_guidelines: string[] | null;
+}
+
+// ==========================================
 // DAILY TRACKING TYPES - DATABASE SCHEMA
 // ==========================================
 
@@ -99,6 +165,10 @@ export interface DailyEntry {
   carbSugarItem?: string | null;       // Description of the item
   diningOutSpend?: number | null;      // Amount spent dining out
   faceCheckImage?: string | null;      // Base64 image from face check
+  
+  // MedGemma analysis fields
+  transcript?: string;                  // Full conversation transcript from check-in
+  analysis?: MedGemmaAnalysis;          // Cached MedGemma analysis result
   
   // Metadata
   notes: string;

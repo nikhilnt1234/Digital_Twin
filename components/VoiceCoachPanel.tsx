@@ -114,12 +114,13 @@ export const VoiceCoachPanel: React.FC<VoiceCoachPanelProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [typedInput, setTypedInput] = useState('');
   const [speechSupported, setSpeechSupported] = useState(true);
+  const [serverOnline, setServerOnline] = useState(true);
   
   // Refs
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const finalTranscriptRef = useRef<string>(''); // Track final transcript for onend handler
-  const processCommandRef = useRef<(text: string) => Promise<void>>(); // Ref for processCommand to avoid stale closure
+  const processCommandRef = useRef<((text: string) => Promise<void>) | undefined>(undefined); // Ref for processCommand to avoid stale closure
 
   // Check for speech recognition support
   useEffect(() => {
@@ -255,6 +256,7 @@ export const VoiceCoachPanel: React.FC<VoiceCoachPanelProps> = ({
         appContext: context,
       });
       
+      setServerOnline(true);
       setLastActions(result.actions);
       setResponse(result.speechText);
       
@@ -284,6 +286,7 @@ export const VoiceCoachPanel: React.FC<VoiceCoachPanelProps> = ({
       setStatus('idle');
     } catch (error) {
       console.error('Command processing error:', error);
+      setServerOnline(false);
       setStatus('error');
       setResponse('Sorry, something went wrong. Please try again.');
       
@@ -383,7 +386,7 @@ export const VoiceCoachPanel: React.FC<VoiceCoachPanelProps> = ({
                 <StatusDot status={status} />
                 <span className="capitalize">{status === 'idle' ? 'Ready' : status}</span>
                 <span className="mx-1">•</span>
-                {process.env.API_KEY ? (
+                {serverOnline ? (
                   <span className="text-emerald-300">AI Online</span>
                 ) : (
                   <span className="text-amber-300">Offline Mode</span>

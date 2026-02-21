@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserInputs, TwinType, SimulationResult, DashboardTab, DailyEntry, PersonaType } from './types';
+import { UserInputs, TwinType, SimulationResult, DashboardTab, DailyEntry, PersonaType, MedGemmaAnalysis } from './types';
 import { InputForm } from './components/InputForm';
 import { SimulationCharts } from './components/SimulationCharts';
 import { CoachChat } from './components/CoachChat';
@@ -21,7 +21,15 @@ import { LensVoicePanel } from './components/LensVoicePanel';
 import { ChartTarget } from './voice/actionSchema';
 
 // Smart Mirror
-import { SmartMirror } from './components/SmartMirror';
+import { SmartMirror, MirrorSessionData, CareSummaryPanel } from './components/SmartMirror';
+import { FollowUpModal, FollowUpQuestion } from './components/FollowUpModal';
+
+// Clinical Analysis (provider abstraction with demo/remote toggle)
+import { analyzeClinical } from './clinical';
+import { buildCheckinPayload } from './services/medgemmaClient';
+
+// Analysis state type
+type AnalysisState = 'idle' | 'pending' | 'analyzing' | 'ready' | 'error';
 
 const DEFAULT_INPUTS: UserInputs = {
   twinType: TwinType.LifeTwin,
@@ -180,6 +188,24 @@ const App: React.FC = () => {
   const [highlightedChart, setHighlightedChart] = useState<ChartTarget | null>(null);
   const [insightToast, setInsightToast] = useState<string | null>(null);
 
+  // Clinical Analysis State
+  const [analysisState, setAnalysisState] = useState<AnalysisState>('idle');
+  const [providerSource, setProviderSource] = useState<'demo' | 'medgemma-cloud' | 'demo-fallback' | null>(null);
+
+  // Follow-up Question Loop State
+  const [followUpQuestions, setFollowUpQuestions] = useState<FollowUpQuestion[]>([]);
+  const [followUpAnswers, setFollowUpAnswers] = useState<Array<{ id: string; answer: string | number }>>([]);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const [followUpPendingPayload, setFollowUpPendingPayload] = useState<{
+    checkinId: string;
+    checkInPayload: ReturnType<typeof buildCheckinPayload>;
+    transcript: string;
+    entry: DailyEntry | null;
+    inputsSnapshot: UserInputs;
+  } | null>(null);
+
   // Check if current persona is diabetic (needs daily tracking)
   const isDiabeticPersona = inputs.persona === 'prediabetic' || inputs.persona === 'diabetic_type2';
 
@@ -277,21 +303,154 @@ const App: React.FC = () => {
     }
   };
 
+  // Handle clinical analysis for a check-in (uses /api/clinical/analyze with demo/remote toggle)
+  const triggerAnalysis = useCallback(async (
+    checkinId: string,
+    transcript: string,
+    entry: DailyEntry | null,
+    inputsSnapshot: UserInputs,
+    followUpAnswersRecord?: Record<string, string>
+  ) => {
+    const yesterday = dailyEntries.find(e => e.date === getYesterdayString());
+    const yesterdaySummary = yesterday?.analysis?.patient_summary?.one_liner || null;
+
+    setAnalysisState('analyzing');
+    setProviderSource(null);
+
+    try {
+      const checkInPayload = buildCheckinPayload(checkinId, transcript, entry, inputsSnapshot, yesterdaySummary);
+      const result = await analyzeClinical({
+        sessionId: checkinId,
+        checkInPayload,
+        followUpAnswers: followUpAnswersRecord,
+      });
+
+      if (result.providerSource) {
+        setProviderSource(result.providerSource);
+      }
+
+      const analysis: MedGemmaAnalysis = {
+        patient_summary: result.patient_summary,
+        triage: result.triage,
+        caregiver_message: result.caregiver_message,
+        clinician_note_draft: result.clinician_note_draft,
+        model_meta: result.model_meta,
+      };
+
+      handleUpdateDailyEntry((prev) => {
+        if (!prev) return prev as DailyEntry;
+        return {
+          ...prev,
+          analysis,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+      setAnalysisState('ready');
+      return analysis;
+    } catch (error) {
+      console.error('[App] Clinical analysis failed:', error);
+      setAnalysisState('error');
+      return null;
+    }
+  }, [dailyEntries, handleUpdateDailyEntry]);
+
+  // Run follow-up question loop. Calls /api/followup/next; if questions, show modal; if isComplete, call clinical analyze.
+  const runFollowUpFlow = useCallback(
+    async (
+      params: {
+        sessionId: string;
+        checkInPayload: ReturnType<typeof buildCheckinPayload>;
+        checkinId: string;
+        transcript: string;
+        entry: DailyEntry | null;
+        inputsSnapshot: UserInputs;
+      },
+      answersOverride?: Array<{ id: string; answer: string | number }>
+    ) => {
+      const { sessionId, checkInPayload, checkinId, transcript, entry, inputsSnapshot } = params;
+      const answers = answersOverride ?? followUpAnswers;
+      setFollowUpLoading(true);
+      setFollowUpError(null);
+
+      try {
+        const res = await fetch('/api/followup/next', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            checkInPayload,
+            followUpAnswers: answers.length > 0 ? answers : undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || err.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { nextQuestions: FollowUpQuestion[]; isComplete: boolean };
+
+        if (data.isComplete || !data.nextQuestions?.length) {
+          setFollowUpOpen(false);
+          setFollowUpQuestions([]);
+          const followUpRecord = answers.length > 0
+            ? Object.fromEntries(answers.map((a) => [a.id, String(a.answer)]))
+            : undefined;
+          setFollowUpAnswers([]);
+          setFollowUpPendingPayload(null);
+          await triggerAnalysis(checkinId, transcript, entry, inputsSnapshot, followUpRecord);
+        } else {
+          setFollowUpAnswers(answers);
+          setFollowUpQuestions(data.nextQuestions);
+          setFollowUpOpen(true);
+          setFollowUpPendingPayload({ checkinId, checkInPayload, transcript, entry, inputsSnapshot });
+        }
+      } catch (err) {
+        console.warn('[App] Follow-up failed, falling back to clinical analysis:', err);
+        setFollowUpOpen(false);
+        setFollowUpQuestions([]);
+        setFollowUpAnswers([]);
+        setFollowUpPendingPayload(null);
+        setFollowUpError(null);
+        await triggerAnalysis(checkinId, transcript, entry, inputsSnapshot);
+      } finally {
+        setFollowUpLoading(false);
+      }
+    },
+    [followUpAnswers, triggerAnalysis]
+  );
+
+  // Handle follow-up modal submit: add answers, call followup/next again, loop until isComplete
+  const handleFollowUpSubmit = useCallback(
+    (newAnswers: Array<{ id: string; answer: string | number }>) => {
+      const combined = [...followUpAnswers, ...newAnswers];
+      setFollowUpAnswers(combined);
+
+      if (!followUpPendingPayload) return;
+
+      runFollowUpFlow(
+        {
+          sessionId: followUpPendingPayload.checkinId,
+          checkInPayload: followUpPendingPayload.checkInPayload,
+          checkinId: followUpPendingPayload.checkinId,
+          transcript: followUpPendingPayload.transcript,
+          entry: followUpPendingPayload.entry,
+          inputsSnapshot: followUpPendingPayload.inputsSnapshot,
+        },
+        combined
+      );
+    },
+    [followUpAnswers, followUpPendingPayload, runFollowUpFlow]
+  );
+
   // Handle mirror session completion
-  const handleMirrorComplete = useCallback((data: {
-    sleepHours: number | null;
-    movementMinutes: number | null;
-    carbSugarFlag: boolean | null;
-    carbSugarItem: string | null;
-    diningOutSpend: number | null;
-    faceCheckImage: string | null;
-  }) => {
+  const handleMirrorComplete = useCallback((data: MirrorSessionData) => {
     const today = getTodayString();
+    const checkinId = `entry_${today}_${Date.now()}`;
     
     // Update daily entry with mirror data - Set weight to 90kg and meals to chai tea latte and steak
     handleUpdateDailyEntry((prev) => {
       const base = prev ?? {
-        id: `entry_${today}_${Date.now()}`,
+        id: checkinId,
         date: today,
         weightKg: null,
         sleepHours: null,
@@ -316,6 +475,7 @@ const App: React.FC = () => {
       
       return {
         ...base,
+        id: base.id || checkinId,
         weightKg: 90, // Set weight to 90 kg
         sleepHours: data.sleepHours ?? base.sleepHours,
         exerciseMinutes: data.movementMinutes ?? base.exerciseMinutes,
@@ -330,6 +490,7 @@ const App: React.FC = () => {
         carbsGrams: 220,
         sugarFlag: true, // Sweet from Chai Tea Latte
         faceCheckImage: data.faceCheckImage,
+        transcript: data.transcript, // Store transcript for analysis
         notes: `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
         updatedAt: new Date().toISOString(),
       };
@@ -363,7 +524,8 @@ const App: React.FC = () => {
       alcoholSpend: 120,
       gymSpend: 50,
     };
-    setInputs(prev => ({ ...prev, ...prediabeticDefaults }));
+    const newInputs = { ...inputs, ...prediabeticDefaults };
+    setInputs(newInputs);
     
     // Switch to app mode and navigate to dashboard
     setAppMode('app');
@@ -372,7 +534,95 @@ const App: React.FC = () => {
     
     // Update URL
     window.history.replaceState(null, '', '/?fromMirror=true');
-  }, [handleUpdateDailyEntry]);
+    
+    // Run follow-up flow, then clinical analyze when complete
+    if (data.transcript) {
+      const entryForFlow: DailyEntry = {
+        id: checkinId,
+        date: today,
+        weightKg: 90,
+        sleepHours: data.sleepHours ?? null,
+        sleepQuality: null,
+        mealsCount: null,
+        mealsCost: data.diningOutSpend ?? null,
+        carbsGrams: 220,
+        proteinGrams: 25,
+        fiberGrams: 20,
+        sugarFlag: true,
+        mealsDescription: 'Chai Tea Latte, Steak',
+        caloriesTotal: null,
+        exerciseMinutes: data.movementMinutes ?? null,
+        exerciseType: null,
+        stepsCount: null,
+        fastingGlucose: null,
+        postMealGlucose: null,
+        notes: `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
+        faceCheckImage: data.faceCheckImage,
+        transcript: data.transcript,
+        carbSugarFlag: data.carbSugarFlag,
+        carbSugarItem: data.carbSugarItem,
+        diningOutSpend: data.diningOutSpend,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const yesterday = dailyEntries.find(e => e.date === getYesterdayString());
+      const yesterdaySummary = yesterday?.analysis?.patient_summary?.one_liner || null;
+      const checkInPayload = buildCheckinPayload(
+        checkinId,
+        data.transcript,
+        entryForFlow,
+        newInputs,
+        yesterdaySummary
+      );
+      setTimeout(() => {
+        setFollowUpAnswers([]);
+        runFollowUpFlow(
+          {
+            sessionId: checkinId,
+            checkInPayload,
+            checkinId,
+            transcript: data.transcript,
+            entry: entryForFlow,
+            inputsSnapshot: newInputs,
+          },
+          []
+        );
+      }, 500);
+    } else {
+      // No transcript — skip follow-up, run clinical analysis directly
+      setTimeout(() => {
+        const entryForFallback: DailyEntry = {
+          id: checkinId,
+          date: today,
+          weightKg: 90,
+          sleepHours: data.sleepHours ?? null,
+          sleepQuality: null,
+          mealsCount: null,
+          mealsCost: data.diningOutSpend ?? null,
+          carbsGrams: 220,
+          proteinGrams: 25,
+          fiberGrams: 20,
+          sugarFlag: true,
+          mealsDescription: 'Chai Tea Latte, Steak',
+          caloriesTotal: null,
+          exerciseMinutes: data.movementMinutes ?? null,
+          exerciseType: null,
+          stepsCount: null,
+          fastingGlucose: null,
+          postMealGlucose: null,
+          notes: `Mirror check-in completed at ${new Date().toLocaleTimeString()}`,
+          faceCheckImage: data.faceCheckImage,
+          transcript: '',
+          carbSugarFlag: data.carbSugarFlag,
+          carbSugarItem: data.carbSugarItem,
+          diningOutSpend: data.diningOutSpend,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        triggerAnalysis(checkinId, '', entryForFallback, newInputs);
+      }, 500);
+    }
+  }, [handleUpdateDailyEntry, inputs, dailyEntries, runFollowUpFlow, triggerAnalysis]);
 
   // Voice Coach Handlers
   const handleHighlightChart = useCallback((target: ChartTarget | null) => {
@@ -577,6 +827,29 @@ const App: React.FC = () => {
 
               {/* Center Col: Daily Tracking + Clinical */}
               <div className="lg:col-span-2 space-y-6">
+                  {/* Clinical Care Summary Panel */}
+                  {(analysisState !== 'idle' || todayEntry?.analysis) && (
+                    <div className="bg-slate-900 rounded-2xl p-4 shadow-xl">
+                      <CareSummaryPanel
+                        analysis={todayEntry?.analysis || null}
+                        analysisState={todayEntry?.analysis ? 'ready' : analysisState}
+                        providerSource={providerSource}
+                        embedded={true}
+                        transcript={todayEntry?.transcript}
+                        onRetry={() => {
+                          if (todayEntry?.transcript) {
+                            triggerAnalysis(
+                              todayEntry.id,
+                              todayEntry.transcript,
+                              todayEntry,
+                              inputs
+                            );
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  
                   {/* Daily Tracking Graphs for Diabetic Personas */}
                   {isDiabeticPersona && (
                     <DailyTrackingGraphs
@@ -720,6 +993,15 @@ const App: React.FC = () => {
       <LensVoicePanel
         isOpen={lensPanelOpen}
         onClose={() => setLensPanelOpen(false)}
+      />
+
+      {/* Follow-up Question Modal (after Mirror complete) */}
+      <FollowUpModal
+        isOpen={followUpOpen}
+        questions={followUpQuestions}
+        loading={followUpLoading}
+        error={followUpError}
+        onSubmit={handleFollowUpSubmit}
       />
 
       {/* Insight Toast */}

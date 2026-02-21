@@ -4,8 +4,6 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
-    // Support multiple env var names for flexibility
-    const apiKey = env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || env.API_KEY || '';
     
     return {
       server: {
@@ -24,13 +22,25 @@ export default defineConfig(({ mode }) => {
             target: 'http://localhost:3001',
             changeOrigin: true,
           },
+          '/api/analyze-checkin': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
+          '/api/clinical': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
+          '/api/coach': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
+          '/api/followup': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          },
         },
       },
       plugins: [react()],
-      define: {
-        'process.env.API_KEY': JSON.stringify(apiKey),
-        'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)
-      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

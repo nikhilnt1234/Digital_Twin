@@ -11,7 +11,8 @@ import { ConversationRail, ConversationMessage } from './ConversationRail';
 import { FaceCapture } from './FaceCapture';
 import { StatusType } from './MirrorStatusChip';
 import { useMirrorVoiceBridge, MirrorVoiceData, FaceCaptureRequest } from './useMirrorVoiceBridge';
-import type { DailyEntry } from '../../types';
+import { CareSummaryPanel } from './CareSummaryPanel';
+import type { DailyEntry, MedGemmaAnalysis } from '../../types';
 
 // Session phases
 type SessionPhase = 'intro' | 'questions' | 'face-check' | 'summary' | 'complete';
@@ -22,13 +23,17 @@ type FaceCapturePhase = 'hidden' | 'frame' | 'countdown' | 'captured';
 // Voice modes
 type VoiceMode = 'demo' | 'live';
 
-interface MirrorSessionData {
+// Analysis state machine
+type AnalysisState = 'idle' | 'pending' | 'analyzing' | 'ready' | 'error';
+
+export interface MirrorSessionData {
   sleepHours: number | null;
   movementMinutes: number | null;
   carbSugarFlag: boolean | null;
   carbSugarItem: string | null;
   diningOutSpend: number | null;
   faceCheckImage: string | null;
+  transcript: string;
 }
 
 interface SmartMirrorProps {
@@ -36,6 +41,10 @@ interface SmartMirrorProps {
   existingEntry: DailyEntry | null;
   /** Enable live Vocal Bridge mode instead of demo */
   liveMode?: boolean;
+  /** Callback when analysis is complete */
+  onAnalysisComplete?: (analysis: MedGemmaAnalysis) => void;
+  /** Cached analysis from previous session */
+  cachedAnalysis?: MedGemmaAnalysis | null;
 }
 
 // Script for the demo flow - 4 questions covering sleep, exercise, meals, and spending
@@ -75,7 +84,13 @@ const DEMO_SCRIPT = {
   summary: "All set! Your dashboard is updated with today's check-in. See you tomorrow!",
 };
 
-export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEntry, liveMode = false }) => {
+export const SmartMirror: React.FC<SmartMirrorProps> = ({ 
+  onComplete, 
+  existingEntry, 
+  liveMode = false,
+  onAnalysisComplete,
+  cachedAnalysis = null,
+}) => {
   // Voice mode state - can toggle between demo and live
   const [voiceMode, setVoiceMode] = useState<VoiceMode>(liveMode ? 'live' : 'demo');
   
@@ -83,6 +98,10 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  
+  // Analysis state machine
+  const [analysisState, setAnalysisState] = useState<AnalysisState>(cachedAnalysis ? 'ready' : 'idle');
+  const [analysis, setAnalysis] = useState<MedGemmaAnalysis | null>(cachedAnalysis);
   
   // Stable callback refs to prevent re-renders triggering camera restart
   const handleCameraError = useCallback((err: string) => {
@@ -107,6 +126,7 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     carbSugarItem: null,
     diningOutSpend: null,
     faceCheckImage: null,
+    transcript: '',
   });
 
   // Conversation
@@ -442,6 +462,14 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
     setStatus('idle');
   }, [addMessage]);
 
+  // Build transcript from conversation messages
+  const buildTranscript = useCallback(() => {
+    return messages.map(m => {
+      const speaker = m.speaker === 'nova' ? 'Nova' : 'User';
+      return `${speaker}: ${m.text}`;
+    }).join('\n');
+  }, [messages]);
+
   // Complete session
   const handleComplete = useCallback(() => {
     setPhase('complete');
@@ -452,8 +480,15 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
       voiceBridge.disconnect();
     }
     
-    onComplete(sessionData);
-  }, [sessionData, onComplete, voiceMode, voiceBridge]);
+    // Build transcript from messages
+    const transcript = buildTranscript();
+    
+    // Pass session data with transcript
+    onComplete({
+      ...sessionData,
+      transcript,
+    });
+  }, [sessionData, onComplete, voiceMode, voiceBridge, buildTranscript]);
   
   // Keep ref updated for async callbacks
   handleCompleteRef.current = handleComplete;
@@ -512,6 +547,21 @@ export const SmartMirror: React.FC<SmartMirrorProps> = ({ onComplete, existingEn
           totalQuestions={4}
           status={status}
           updatedField={updatedField}
+        />
+      )}
+
+      {/* Care Summary Panel - Shows during/after summary phase */}
+      {cameraReady && (phase === 'summary' || phase === 'complete') && (
+        <CareSummaryPanel
+          analysis={analysis}
+          analysisState={analysisState}
+          onRetry={() => {
+            setAnalysisState('pending');
+            // Trigger re-analysis via callback if available
+            if (onAnalysisComplete && analysis) {
+              onAnalysisComplete(analysis);
+            }
+          }}
         />
       )}
 

@@ -1,6 +1,7 @@
 
-import { GoogleGenAI } from "@google/genai";
 import { UserInputs, SimulationResult, DashboardTab } from "../types";
+
+const COACH_CHAT_API = "/api/coach/chat";
 
 export const getCoachResponse = async (
   inputs: UserInputs,
@@ -8,96 +9,97 @@ export const getCoachResponse = async (
   userQuestion: string,
   activeContext: DashboardTab
 ): Promise<string> => {
-  // Always obtain API key directly from process.env.API_KEY
-  if (!process.env.API_KEY) {
-    return "I'm sorry, I cannot connect to the DigiCare Coach services right now (Missing API Key).";
-  }
-
   try {
-    // Correct initialization: always use named parameter { apiKey: process.env.API_KEY }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    // Construct the structured input expected by the Analyst Persona
-    // This JSON structure ensures the model "sees" the data exactly as the UI displays it.
     const healthReport = {
-        blood_tests: {
-            fasting_glucose_mg_dL: inputs.fastingGlucose,
-            hba1c_percent: inputs.hba1c,
-            total_cholesterol_mg_dL: inputs.cholesterol,
-            ldl_cholesterol_mg_dL: inputs.ldlCholesterol,
-            hdl_cholesterol_mg_dL: inputs.hdlCholesterol,
-            triglycerides_mg_dL: inputs.triglycerides,
-            alt_uL: inputs.alt,
-            ast_uL: inputs.ast,
-            creatinine_mg_dL: inputs.creatinine
-        },
-        vitals: {
-            bmi: inputs.heightCm > 0 ? (inputs.weightKg / Math.pow(inputs.heightCm/100, 2)).toFixed(1) : null,
-            resting_heart_rate: inputs.restingHeartRate,
-            blood_pressure_systolic: inputs.bloodPressureSys,
-            blood_pressure_diastolic: inputs.bloodPressureDia
-        },
-        lifestyle_metrics: {
-            steps_per_day: inputs.stepsPerDay,
-            workouts_per_week: inputs.workoutsPerWeek,
-            avg_sleep_hours: inputs.averageSleep
-        },
-        history: {
-            previous_weight: inputs.previousWeightKg
-        }
+      blood_tests: {
+        fasting_glucose_mg_dL: inputs.fastingGlucose,
+        hba1c_percent: inputs.hba1c,
+        total_cholesterol_mg_dL: inputs.cholesterol,
+        ldl_cholesterol_mg_dL: inputs.ldlCholesterol,
+        hdl_cholesterol_mg_dL: inputs.hdlCholesterol,
+        triglycerides_mg_dL: inputs.triglycerides,
+        alt_uL: inputs.alt,
+        ast_uL: inputs.ast,
+        creatinine_mg_dL: inputs.creatinine,
+      },
+      vitals: {
+        bmi:
+          inputs.heightCm > 0
+            ? (inputs.weightKg / Math.pow(inputs.heightCm / 100, 2)).toFixed(1)
+            : null,
+        resting_heart_rate: inputs.restingHeartRate,
+        blood_pressure_systolic: inputs.bloodPressureSys,
+        blood_pressure_diastolic: inputs.bloodPressureDia,
+      },
+      lifestyle_metrics: {
+        steps_per_day: inputs.stepsPerDay,
+        workouts_per_week: inputs.workoutsPerWeek,
+        avg_sleep_hours: inputs.averageSleep,
+      },
+      history: {
+        previous_weight: inputs.previousWeightKg,
+      },
     };
 
     const spendingReport = {
-        time_range: "last_month_avg",
-        category_totals: {
-            groceries_total: inputs.groceriesSpend,
-            eating_out_total: inputs.eatingOutSpend,
-            alcohol_and_bars_total: inputs.alcoholSpend,
-            late_night_food_total: inputs.lateNightFoodSpend,
-            health_and_fitness_total: inputs.gymSpend,
-            medical_and_pharmacy_total: inputs.pharmacySpend,
-            wellness_total: inputs.wellnessSpend,
-            subscriptions_total: inputs.subscriptionSpend,
-            other_lifestyle_total: inputs.lifestyleSpend
-        },
-        income_and_savings: {
-            monthly_income: inputs.monthlyIncome,
-            total_savings: inputs.currentSavings,
-            fixed_costs: inputs.fixedCosts,
-            total_debt: inputs.totalDebt
-        }
+      time_range: "last_month_avg",
+      category_totals: {
+        groceries_total: inputs.groceriesSpend,
+        eating_out_total: inputs.eatingOutSpend,
+        alcohol_and_bars_total: inputs.alcoholSpend,
+        late_night_food_total: inputs.lateNightFoodSpend,
+        health_and_fitness_total: inputs.gymSpend,
+        medical_and_pharmacy_total: inputs.pharmacySpend,
+        wellness_total: inputs.wellnessSpend,
+        subscriptions_total: inputs.subscriptionSpend,
+        other_lifestyle_total: inputs.lifestyleSpend,
+      },
+      income_and_savings: {
+        monthly_income: inputs.monthlyIncome,
+        total_savings: inputs.currentSavings,
+        fixed_costs: inputs.fixedCosts,
+        total_debt: inputs.totalDebt,
+      },
     };
 
     const connectionsContext = {
-        health: {
-            connected_provider: inputs.hospitalName,
-            is_connected: inputs.isConnectedHospital,
-            active_appointments: inputs.appointments.map(a => `${a.date}: ${a.doctor} (${a.reason})`),
-            last_bill_scan_content: inputs.billText || "None"
+      health: {
+        connected_provider: inputs.hospitalName,
+        is_connected: inputs.isConnectedHospital,
+        active_appointments: inputs.appointments.map(
+          (a) => `${a.date}: ${a.doctor} (${a.reason})`
+        ),
+        last_bill_scan_content: inputs.billText || "None",
+      },
+      money: {
+        reported_assets_total: inputs.bankTotal,
+        reported_investments: inputs.investmentTotal,
+        medical_debt: {
+          total: inputs.medicalDebtTotal,
+          interest: inputs.medicalDebtInterest,
+          monthly_payment: inputs.medicalDebtMonthly,
         },
-        money: {
-            reported_assets_total: inputs.bankTotal,
-            reported_investments: inputs.investmentTotal,
-            medical_debt: {
-                total: inputs.medicalDebtTotal,
-                interest: inputs.medicalDebtInterest,
-                monthly_payment: inputs.medicalDebtMonthly
-            },
-            recurring_payments: inputs.recurringPayments.map(p => `${p.name} ($${p.amount}) - ${p.isEssential ? 'Essential' : 'Optional'}`)
-        }
+        recurring_payments: inputs.recurringPayments.map(
+          (p) =>
+            `${p.name} ($${p.amount}) - ${p.isEssential ? "Essential" : "Optional"}`
+        ),
+      },
     };
 
-    const analystContext = JSON.stringify({
+    const analystContext = JSON.stringify(
+      {
         health_report: healthReport,
         spending_report: spendingReport,
         connections_data: connectionsContext,
         twin_context: {
-            current_focus: activeContext,
-            user_question: userQuestion
-        }
-    }, null, 2);
+          current_focus: activeContext,
+          user_question: userQuestion,
+        },
+      },
+      null,
+      2
+    );
 
-    // Strict Safety & Persona Definition
     const systemInstruction = `
 You are **DigiCare Coach**, a holistic health & wealth strategist. Your goal is to analyze the user's "Digital Twin" simulation and provide high-impact, motivational, and specific advice.
 
@@ -132,27 +134,37 @@ RESPONSE STRUCTURE (Use Markdown):
 *A short, punchy closing statement to fire them up.*
     `;
 
-    // Using gemini-3-pro-preview for advanced reasoning and holistic analysis
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `
-DATA CONTEXT:
+    const userContent = `DATA CONTEXT:
 ${analystContext}
 
 USER QUESTION:
-${userQuestion || "Please analyze my current Digital Twin state and give me a motivational action plan."}
-      `,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.6, // Slightly higher for more motivational/creative tone
-      }
+${userQuestion || "Please analyze my current Digital Twin state and give me a motivational action plan."}`;
+
+    const response = await fetch(COACH_CHAT_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: userContent }],
+        systemInstruction,
+        model: "gemini-2.0-flash",
+        temperature: 0.6,
+      }),
     });
 
-    // Property access .text directly as per guidelines
-    return response.text || "I couldn't generate a response at this time.";
+    const data = await response.json().catch(() => ({}));
 
+    if (!response.ok) {
+      const detail = data?.detail || data?.error || `HTTP ${response.status}`;
+      console.error("Coach chat error:", detail);
+      return "I'm having trouble connecting to the Coach service right now. Please check your connection.";
+    }
+
+    const text = data?.text;
+    return typeof text === "string" && text
+      ? text
+      : "I couldn't generate a response at this time.";
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("Coach chat error:", error);
     return "I'm having trouble connecting to the Coach service right now. Please check your connection.";
   }
 };
